@@ -25,7 +25,7 @@ class GisBanner extends StatelessWidget {
         ),
         boxShadow: [
           BoxShadow(
-            color: AppColors.navy.withOpacity(0.25),
+            color: AppColors.navy.withValues(alpha: 0.25),
             blurRadius: 20,
             offset: const Offset(0, 8),
           ),
@@ -47,7 +47,7 @@ class GisBanner extends StatelessWidget {
                     Container(
                       padding: const EdgeInsets.all(8),
                       decoration: BoxDecoration(
-                        color: AppColors.gold.withOpacity(0.15),
+                        color: AppColors.gold.withValues(alpha: 0.15),
                         borderRadius: BorderRadius.circular(AppRadii.sm),
                       ),
                       child: const Icon(Icons.travel_explore,
@@ -73,8 +73,7 @@ class GisBanner extends StatelessWidget {
                 Text(
                   'View puroks, landmarks, evacuation sites and household '
                   'zones in the interactive barangay map.',
-                  style:
-                      text.bodySmall?.copyWith(color: AppColors.onNavyMuted),
+                  style: text.bodySmall?.copyWith(color: AppColors.onNavyMuted),
                 ),
                 const SizedBox(height: AppSpacing.md + 4),
                 FilledButton.icon(
@@ -96,7 +95,7 @@ class _MapSketchPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final road = Paint()
-      ..color = AppColors.royalBlue.withOpacity(0.22)
+      ..color = AppColors.royalBlue.withValues(alpha: 0.22)
       ..strokeWidth = 2
       ..style = PaintingStyle.stroke;
 
@@ -118,16 +117,15 @@ class _MapSketchPainter extends CustomPainter {
     );
 
     // Gold location pin
-    final pin = Paint()..color = AppColors.gold.withOpacity(0.85);
+    final pin = Paint()..color = AppColors.gold.withValues(alpha: 0.85);
     final pinCenter = Offset(w * 0.82, h * 0.38);
     canvas.drawCircle(pinCenter, 7, pin);
-    canvas.drawCircle(
-        pinCenter, 3, Paint()..color = AppColors.navyDeep);
+    canvas.drawCircle(pinCenter, 3, Paint()..color = AppColors.navyDeep);
     canvas.drawCircle(
       pinCenter,
       13,
       Paint()
-        ..color = AppColors.gold.withOpacity(0.3)
+        ..color = AppColors.gold.withValues(alpha: 0.3)
         ..style = PaintingStyle.stroke
         ..strokeWidth = 2,
     );

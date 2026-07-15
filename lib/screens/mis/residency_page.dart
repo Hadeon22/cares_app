@@ -21,9 +21,23 @@ class _ResidencyPageState extends State<ResidencyPage> {
   String? _purok;
 
   @override
+  void initState() {
+    super.initState();
+    ResidentStore.instance.ensureLoaded();
+  }
+
+  @override
   Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: ResidentStore.instance,
+      builder: (context, _) => _buildBody(context),
+    );
+  }
+
+  Widget _buildBody(BuildContext context) {
+    final store = ResidentStore.instance;
     final text = Theme.of(context).textTheme;
-    final rows = kResidents.where((r) {
+    final rows = store.all.where((r) {
       if (_query.isNotEmpty &&
           !r.name.toLowerCase().contains(_query.toLowerCase())) {
         return false;
@@ -41,17 +55,23 @@ class _ResidencyPageState extends State<ResidencyPage> {
           desc: 'Full resident database — search, view, and manage resident '
               'profiles',
         ),
-        const KpiGrid(cards: [
+        KpiGrid(cards: [
           KpiCard(
               label: 'Total Residents',
-              value: '5,612',
-              trend: 'Last updated: May 2025'),
+              value: '${store.all.length}',
+              trend: store.loading ? 'Loading…' : 'Live from database'),
           KpiCard(
-              label: 'Verified Residents',
-              value: '1,248',
+              label: 'Accounts Claimed',
+              value: '${store.claimedCount}',
               accent: KpiAccent.success),
-          KpiCard(label: 'Senior Citizens', value: '342', accent: KpiAccent.info),
-          KpiCard(label: 'PWD Residents', value: '89', accent: KpiAccent.warning),
+          KpiCard(
+              label: 'Senior Citizens',
+              value: '${store.countWithCategory('Senior Citizen')}',
+              accent: KpiAccent.info),
+          KpiCard(
+              label: 'PWD Residents',
+              value: '${store.countWithCategory('PWD')}',
+              accent: KpiAccent.warning),
         ]),
         MisCard(
           title: 'Resident Directory',
@@ -82,7 +102,15 @@ class _ResidencyPageState extends State<ResidencyPage> {
                 onChanged: (v) => setState(() => _purok = v),
               ),
               const SizedBox(height: AppSpacing.md),
-              if (rows.isEmpty)
+              if (store.loading)
+                const Padding(
+                  padding: EdgeInsets.all(AppSpacing.lg),
+                  child: Center(
+                      child: CircularProgressIndicator(color: AppColors.gold)),
+                )
+              else if (store.error != null)
+                EmptyState('Could not load residents.\n${store.error}')
+              else if (rows.isEmpty)
                 const EmptyState(
                     'No residents found matching your search criteria.')
               else
@@ -110,7 +138,7 @@ class _ResidencyPageState extends State<ResidencyPage> {
                                 runSpacing: 4,
                                 crossAxisAlignment: WrapCrossAlignment.center,
                                 children: [
-                                  Text('${r.age} yrs',
+                                  Text('${r.ageLabel} yrs',
                                       style: text.labelSmall?.copyWith(
                                           color: AppColors.inkMuted)),
                                   StatusBadge(r.purok, kind: BadgeKind.gray),

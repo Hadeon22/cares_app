@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../core/constants/app_colors.dart';
 import '../core/constants/app_constants.dart';
+import '../data/api_client.dart';
 import '../data/stores.dart';
 import '../widgets/app_toast.dart';
 import '../widgets/common.dart';
@@ -9,6 +10,8 @@ import '../widgets/form_widgets.dart';
 
 /// Account claiming — mobile version of claim-account.html.
 /// 3-step wizard: Verify Identity → Set Credentials → Confirmation.
+/// Steps hit the same endpoints the web uses: POST /api/residents/claim/verify
+/// finds the record, POST /api/residents/claim creates the login.
 class ClaimAccountScreen extends StatefulWidget {
   const ClaimAccountScreen({super.key});
 
@@ -18,6 +21,7 @@ class ClaimAccountScreen extends StatefulWidget {
 
 class _ClaimAccountScreenState extends State<ClaimAccountScreen> {
   int _step = 1;
+  bool _busy = false;
 
   final _fname = TextEditingController();
   final _lname = TextEditingController();
@@ -29,7 +33,10 @@ class _ClaimAccountScreenState extends State<ClaimAccountScreen> {
   DateTime? _dob;
   String _purok = kPuroks.first;
 
-  static const _refNo = 'ACC-2025-0048';
+  // Set by /claim/verify — the matched resident record.
+  int? _residentId;
+  String _matchedName = '';
+  String? _matchedPurok;
 
   @override
   void dispose() {
@@ -39,14 +46,40 @@ class _ClaimAccountScreenState extends State<ClaimAccountScreen> {
     super.dispose();
   }
 
-  void _next() {
+  String _dobIso() {
+    final d = _dob;
+    if (d == null) return '';
+    String p(int n) => '$n'.padLeft(2, '0');
+    return '${d.year}-${p(d.month)}-${p(d.day)}';
+  }
+
+  Future<void> _next() async {
+    if (_busy) return;
     if (_step == 1) {
       if (_fname.text.trim().isEmpty || _lname.text.trim().isEmpty) {
         showAppToast(context, 'Please fill in your name to continue.',
             icon: Icons.error_outline);
         return;
       }
-      setState(() => _step = 2);
+      setState(() => _busy = true);
+      try {
+        final res = await ApiClient.instance
+            .post('/api/residents/claim/verify', {
+          'first_name': _fname.text.trim(),
+          'last_name': _lname.text.trim(),
+          if (_dob != null) 'birthdate': _dobIso(),
+        }) as Map<String, dynamic>;
+        _residentId = res['id'] as int?;
+        _matchedName = (res['name'] ?? '') as String;
+        _matchedPurok = res['purok'] as String?;
+        setState(() => _step = 2);
+      } on ApiException catch (e) {
+        if (mounted) {
+          showAppToast(context, e.message, icon: Icons.error_outline);
+        }
+      } finally {
+        if (mounted) setState(() => _busy = false);
+      }
     } else if (_step == 2) {
       if (_email.text.trim().isEmpty) {
         showAppToast(context, 'Please enter your email address.',
@@ -63,15 +96,31 @@ class _ClaimAccountScreenState extends State<ClaimAccountScreen> {
             icon: Icons.error_outline);
         return;
       }
-      AuditLog.instance.log(
-        'ACC_CLAIM_SUBMIT',
-        'Account claim submitted by ${_fname.text.trim()} '
-            '${_lname.text.trim()} <${_email.text.trim()}> (Ref: $_refNo)',
-        category: AuditCategory.auth,
-      );
-      setState(() => _step = 3);
-      showAppToast(context, 'Account request submitted! Ref: $_refNo',
-          icon: Icons.vpn_key_outlined);
+      setState(() => _busy = true);
+      try {
+        await ApiClient.instance.post('/api/residents/claim', {
+          'resident_id': _residentId,
+          'email': _email.text.trim(),
+          'password': _pass.text,
+          if (_mobile.text.trim().isNotEmpty) 'mobile_no': _mobile.text.trim(),
+        });
+        AuditLog.instance.log(
+          'ACC_CLAIM_SUBMIT',
+          'Account claimed by $_matchedName <${_email.text.trim()}>',
+          category: AuditCategory.auth,
+        );
+        setState(() => _step = 3);
+        if (mounted) {
+          showAppToast(context, 'Account created! You can now sign in.',
+              icon: Icons.vpn_key_outlined);
+        }
+      } on ApiException catch (e) {
+        if (mounted) {
+          showAppToast(context, e.message, icon: Icons.error_outline);
+        }
+      } finally {
+        if (mounted) setState(() => _busy = false);
+      }
     }
   }
 
@@ -118,8 +167,7 @@ class _ClaimAccountScreenState extends State<ClaimAccountScreen> {
                 const SizedBox(height: AppSpacing.md),
                 Text('Claim Your Account',
                     textAlign: TextAlign.center,
-                    style:
-                        text.headlineSmall?.copyWith(color: AppColors.ink)),
+                    style: text.headlineSmall?.copyWith(color: AppColors.ink)),
                 const SizedBox(height: 4),
                 Text(
                   'Link your existing barangay record to a new C.A.R.E.S. '
@@ -156,9 +204,8 @@ class _ClaimAccountScreenState extends State<ClaimAccountScreen> {
                 Expanded(
                   child: Container(
                     height: 3,
-                    color: _step > i
-                        ? const Color(0xFF22C55E)
-                        : AppColors.divider,
+                    color:
+                        _step > i ? const Color(0xFF22C55E) : AppColors.divider,
                   ),
                 ),
             ],
@@ -177,9 +224,8 @@ class _ClaimAccountScreenState extends State<ClaimAccountScreen> {
                           ? TextAlign.right
                           : TextAlign.center,
                   style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                        color: _step >= i + 1
-                            ? AppColors.ink
-                            : AppColors.inkMuted,
+                        color:
+                            _step >= i + 1 ? AppColors.ink : AppColors.inkMuted,
                         fontWeight: FontWeight.w700,
                       ),
                 ),
@@ -268,15 +314,16 @@ class _ClaimAccountScreenState extends State<ClaimAccountScreen> {
   // ── Step 2: Set credentials ────────────────────────────────
   List<Widget> _buildStep2() {
     return [
-      const AlertBanner(
+      AlertBanner(
         kind: AlertKind.success,
         child: Text.rich(TextSpan(children: [
-          TextSpan(
+          const TextSpan(
               text: 'Record found! ',
               style: TextStyle(fontWeight: FontWeight.w800)),
           TextSpan(
-              text: 'We found a matching resident record. Please set your '
-                  'login credentials below.'),
+              text: 'Matched: $_matchedName'
+                  '${_matchedPurok != null ? ' ($_matchedPurok)' : ''}. '
+                  'Please set your login credentials below.'),
         ])),
       ),
       AppTextField(
@@ -306,8 +353,7 @@ class _ClaimAccountScreenState extends State<ClaimAccountScreen> {
       const AlertBanner(
         kind: AlertKind.info,
         child: Text('Your account will be linked to your existing barangay '
-            'record. A barangay official will verify and activate it within '
-            '24 hours.'),
+            'record and becomes active immediately after creation.'),
       ),
     ];
   }
@@ -326,14 +372,13 @@ class _ClaimAccountScreenState extends State<ClaimAccountScreen> {
         child: const Icon(Icons.check, color: Colors.white, size: 34),
       ),
       const SizedBox(height: AppSpacing.md),
-      Text('Account Request Submitted!',
+      Text('Account Created!',
           textAlign: TextAlign.center,
           style: text.titleLarge?.copyWith(color: AppColors.ink)),
       const SizedBox(height: AppSpacing.sm),
       Text(
-        'Your account claiming request has been received. A barangay '
-        'official will review and activate your account within 1–2 working '
-        'days. You will receive an SMS confirmation.',
+        'Your barangay record is now linked to your new C.A.R.E.S. account. '
+        'You can sign in right away using the email and password you set.',
         textAlign: TextAlign.center,
         style: text.bodySmall?.copyWith(color: AppColors.inkMuted, height: 1.5),
       ),
@@ -343,17 +388,17 @@ class _ClaimAccountScreenState extends State<ClaimAccountScreen> {
         decoration: BoxDecoration(
           color: AppColors.goldSoft,
           borderRadius: BorderRadius.circular(AppRadii.sm),
-          border: Border.all(color: AppColors.gold.withOpacity(0.4)),
+          border: Border.all(color: AppColors.gold.withValues(alpha: 0.4)),
         ),
         child: Column(
           children: [
-            Text('REFERENCE NUMBER',
+            Text('SIGN IN WITH',
                 style: text.labelSmall?.copyWith(
                     color: AppColors.goldDeep,
                     fontWeight: FontWeight.w800,
                     letterSpacing: 1.2)),
             const SizedBox(height: 4),
-            Text(_refNo,
+            Text(_email.text.trim(),
                 style: text.titleLarge?.copyWith(
                     color: AppColors.ink, fontWeight: FontWeight.w800)),
           ],
@@ -379,8 +424,13 @@ class _ClaimAccountScreenState extends State<ClaimAccountScreen> {
         ),
         const SizedBox(width: AppSpacing.sm),
         FilledButton.icon(
-          onPressed: _next,
-          icon: const Icon(Icons.arrow_forward, size: 18),
+          onPressed: _busy ? null : _next,
+          icon: _busy
+              ? const SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2))
+              : const Icon(Icons.arrow_forward, size: 18),
           label: Text(_step == 1 ? 'Verify Identity' : 'Create Account'),
         ),
       ],

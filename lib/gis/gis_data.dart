@@ -23,10 +23,41 @@ class GisMapData {
     required this.water,
     required this.vegetationByKind,
     required this.vegetationOutside,
+    required this.minLon,
+    required this.maxLat,
+    required this.cosLat,
+    required this.scale,
   });
 
   /// Canvas size in map units (width fixed at 1000).
   final Size size;
+
+  // Projection parameters (see _load) — kept so real-world lat/lng can be
+  // converted to/from the normalized (0..1) pin coordinates the map uses.
+  final double minLon;
+  final double maxLat;
+  final double cosLat;
+  final double scale;
+
+  /// lat/lng → normalized (0..1) canvas position, or null when the point
+  /// falls well outside the rendered area (so far-away pins are skipped
+  /// rather than smeared onto the map edge).
+  Offset? normalizedFromLatLng(double lat, double lng) {
+    final n = Offset(
+      (lng - minLon) * cosLat * scale / size.width,
+      (maxLat - lat) * scale / size.height,
+    );
+    if (n.dx < -0.05 || n.dx > 1.05 || n.dy < -0.05 || n.dy > 1.05) {
+      return null;
+    }
+    return n;
+  }
+
+  /// Normalized (0..1) canvas position → (lat, lng).
+  (double lat, double lng) latLngFromNormalized(Offset n) => (
+        maxLat - n.dy * size.height / scale,
+        minLon + n.dx * size.width / (cosLat * scale),
+      );
 
   final Path boundary;
 
@@ -163,6 +194,10 @@ class GisMapData {
       water: water,
       vegetationByKind: vegetationByKind,
       vegetationOutside: vegetationOutside,
+      minLon: minLon,
+      maxLat: maxLat,
+      cosLat: cosLat,
+      scale: scale,
     );
   }
 

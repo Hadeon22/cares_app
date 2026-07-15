@@ -98,6 +98,8 @@ class _AuditPageState extends State<AuditPage> {
 
   @override
   Widget build(BuildContext context) {
+    // Pulls the shared DB trail (web + app + trigger rows) on first open.
+    AuditLog.instance.ensureLoaded();
     return AnimatedBuilder(
       animation: AuditLog.instance,
       builder: (context, _) {

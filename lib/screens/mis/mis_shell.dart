@@ -35,15 +35,17 @@ const _modules = <_MisModule>[
       Icons.holiday_village_outlined, [UserRole.admin, UserRole.officer]),
   _MisModule('certificates', 'Certificate Processing', 'Request management',
       Icons.description_outlined, [UserRole.admin, UserRole.officer]),
-  _MisModule('incidents', 'Blotter / Incidents',
-      'Emergency logging & tracking', Icons.campaign_outlined,
-      [UserRole.admin, UserRole.officer]),
+  _MisModule('incidents', 'Blotter / Incidents', 'Emergency logging & tracking',
+      Icons.campaign_outlined, [UserRole.admin, UserRole.officer]),
   _MisModule('feedback', 'Feedback', 'Resident sentiment & trends',
       Icons.chat_bubble_outline, [UserRole.admin, UserRole.officer]),
   _MisModule('gis', 'GIS Mapping', 'Interactive zone & hazard view',
       Icons.map_outlined, [UserRole.admin, UserRole.officer]),
-  _MisModule('accounts', 'Account Claiming',
-      'Resident registration & verification', Icons.vpn_key_outlined,
+  _MisModule(
+      'accounts',
+      'Account Claiming',
+      'Resident registration & verification',
+      Icons.vpn_key_outlined,
       [UserRole.admin, UserRole.officer]),
   _MisModule('analytics', 'Analytics', 'Predictive insights & trend charts',
       Icons.insights_outlined, [UserRole.admin, UserRole.officer]),
@@ -67,13 +69,12 @@ class MisShell extends StatefulWidget {
 class _MisShellState extends State<MisShell> {
   String _module = 'dashboard';
 
-  _MisModule get _current =>
-      _modules.firstWhere((m) => m.key == _module);
+  _MisModule get _current => _modules.firstWhere((m) => m.key == _module);
 
   void _navigate(String key) {
     final session = AppSession.instance;
-    final module = _modules.firstWhere((m) => m.key == key,
-        orElse: () => _modules.first);
+    final module =
+        _modules.firstWhere((m) => m.key == key, orElse: () => _modules.first);
     // Client-side RBAC, mirroring nav() in js/shell.js.
     if (session.role == null || !module.roles.contains(session.role)) {
       showAppToast(context, 'Access denied: insufficient permissions',
@@ -363,14 +364,13 @@ class _MisDrawer extends StatelessWidget {
             const Divider(color: AppColors.navyBorder),
             Expanded(
               child: ListView(
-                padding:
-                    const EdgeInsets.symmetric(vertical: AppSpacing.sm),
+                padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
                 children: [
                   for (final m in visible)
                     ListTile(
                       dense: true,
                       selected: m.key == current,
-                      selectedTileColor: AppColors.gold.withOpacity(0.12),
+                      selectedTileColor: AppColors.gold.withValues(alpha: 0.12),
                       leading: Icon(
                         m.icon,
                         size: 20,
@@ -403,8 +403,8 @@ class _MisDrawer extends StatelessWidget {
                   style: text.labelLarge?.copyWith(
                       color: AppColors.onNavy, fontWeight: FontWeight.w600)),
               subtitle: Text('Back to the public landing page',
-                  style: text.labelSmall
-                      ?.copyWith(color: AppColors.onNavyMuted)),
+                  style:
+                      text.labelSmall?.copyWith(color: AppColors.onNavyMuted)),
               onTap: onOpenPortal,
             ),
             ListTile(

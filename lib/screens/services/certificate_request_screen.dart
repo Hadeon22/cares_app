@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_constants.dart';
+import '../../data/session.dart';
 import '../../data/stores.dart';
 import '../../widgets/app_toast.dart';
 import '../../widgets/form_widgets.dart';
@@ -57,21 +58,54 @@ class _CertificateRequestScreenState extends State<CertificateRequestScreen> {
     }
   }
 
-  void _submit() {
+  bool _busy = false;
+
+  Future<void> _submit() async {
+    if (_busy) return;
     if (_fname.text.trim().isEmpty || _lname.text.trim().isEmpty) {
       showAppToast(context, 'Please enter your first and last name.',
           icon: Icons.error_outline);
       return;
     }
-    const ref = 'CERT-2025-088';
+    // Extra details ride along in `purpose` — the certificate table keeps a
+    // single free-text purpose column (matches the web flow).
+    final extras = [
+      if (_purpose.text.trim().isNotEmpty) _purpose.text.trim(),
+      if (_contact.text.trim().isNotEmpty) 'Contact: ${_contact.text.trim()}',
+      if (_pickup != null)
+        'Preferred pickup: '
+            '${MaterialLocalizations.of(context).formatMediumDate(_pickup!)}',
+      'Address: $_purok',
+    ].join(' · ');
+
+    setState(() => _busy = true);
+    final session = AppSession.instance;
+    final CertificateRequest req;
+    try {
+      req = await CertificateStore.instance.file(
+        typeKey: _selected.key,
+        applicantName: '${_lname.text.trim()}, ${_fname.text.trim()}',
+        purpose: extras,
+        residentId: session.residentId,
+        accountId: session.accountId,
+      );
+    } catch (e) {
+      if (mounted) {
+        setState(() => _busy = false);
+        showAppToast(context, e.toString(), icon: Icons.error_outline);
+      }
+      return;
+    }
     AuditLog.instance.log(
       'CERT_REQUEST',
       '${_selected.name} requested by ${_fname.text.trim()} '
-          '${_lname.text.trim()} (Ref: $ref)',
+          '${_lname.text.trim()} (Ref: ${req.requestNo})',
       category: AuditCategory.certificate,
     );
+    if (!mounted) return;
     Navigator.of(context).pop();
-    showAppToast(context, '${_selected.name} request submitted! Ref: $ref',
+    showAppToast(context,
+        '${_selected.name} request submitted! Ref: ${req.requestNo}',
         icon: Icons.description_outlined);
   }
 
@@ -160,8 +194,13 @@ class _CertificateRequestScreenState extends State<CertificateRequestScreen> {
           ),
           const SizedBox(height: AppSpacing.sm),
           FilledButton.icon(
-            onPressed: _submit,
-            icon: const Icon(Icons.check, size: 18),
+            onPressed: _busy ? null : _submit,
+            icon: _busy
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2))
+                : const Icon(Icons.check, size: 18),
             label: const Text('Submit Request'),
           ),
           const SizedBox(height: AppSpacing.sm),

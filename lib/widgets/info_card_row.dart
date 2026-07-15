@@ -15,12 +15,10 @@ class InfoCardRow extends StatelessWidget {
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
         physics: const BouncingScrollPhysics(),
-        padding:
-            const EdgeInsets.symmetric(horizontal: AppSpacing.gutter),
+        padding: const EdgeInsets.symmetric(horizontal: AppSpacing.gutter),
         itemCount: InfoItem.items.length,
         separatorBuilder: (_, __) => const SizedBox(width: AppSpacing.sm + 4),
-        itemBuilder: (context, index) =>
-            _InfoCard(item: InfoItem.items[index]),
+        itemBuilder: (context, index) => _InfoCard(item: InfoItem.items[index]),
       ),
     );
   }
@@ -44,7 +42,7 @@ class _InfoCard extends StatelessWidget {
         border: Border.all(color: AppColors.divider),
         boxShadow: [
           BoxShadow(
-            color: AppColors.navy.withOpacity(0.05),
+            color: AppColors.navy.withValues(alpha: 0.05),
             blurRadius: 12,
             offset: const Offset(0, 4),
           ),
@@ -61,8 +59,7 @@ class _InfoCard extends StatelessWidget {
                   color: AppColors.goldSoft,
                   borderRadius: BorderRadius.circular(AppRadii.sm - 2),
                 ),
-                child:
-                    Icon(item.icon, size: 16, color: AppColors.goldDeep),
+                child: Icon(item.icon, size: 16, color: AppColors.goldDeep),
               ),
               const SizedBox(width: AppSpacing.sm),
               Expanded(

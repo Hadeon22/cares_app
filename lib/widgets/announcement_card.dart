@@ -27,7 +27,7 @@ class AnnouncementCard extends StatelessWidget {
             border: Border.all(color: AppColors.divider),
             boxShadow: [
               BoxShadow(
-                color: AppColors.navy.withOpacity(0.04),
+                color: AppColors.navy.withValues(alpha: 0.04),
                 blurRadius: 10,
                 offset: const Offset(0, 4),
               ),
@@ -40,10 +40,10 @@ class AnnouncementCard extends StatelessWidget {
               Row(
                 children: [
                   Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 10, vertical: 4),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                     decoration: BoxDecoration(
-                      color: a.tagColor.withOpacity(0.10),
+                      color: a.tagColor.withValues(alpha: 0.10),
                       borderRadius: BorderRadius.circular(AppRadii.pill),
                     ),
                     child: Text(
@@ -56,13 +56,12 @@ class AnnouncementCard extends StatelessWidget {
                     ),
                   ),
                   const Spacer(),
-                  Icon(Icons.calendar_today_outlined,
+                  const Icon(Icons.calendar_today_outlined,
                       size: 12, color: AppColors.inkMuted),
                   const SizedBox(width: 4),
                   Text(
                     a.date,
-                    style:
-                        text.labelSmall?.copyWith(color: AppColors.inkMuted),
+                    style: text.labelSmall?.copyWith(color: AppColors.inkMuted),
                   ),
                 ],
               ),

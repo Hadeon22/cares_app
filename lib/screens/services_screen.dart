@@ -14,10 +14,10 @@ class ServicesScreen extends StatelessWidget {
     return CustomScrollView(
       physics: const BouncingScrollPhysics(),
       slivers: [
-        SliverPadding(
-          padding: const EdgeInsets.fromLTRB(
+        const SliverPadding(
+          padding: EdgeInsets.fromLTRB(
               AppSpacing.gutter, AppSpacing.lg, AppSpacing.gutter, 0),
-          sliver: const SliverToBoxAdapter(
+          sliver: SliverToBoxAdapter(
             child: SectionHeader(
               eyebrow: 'Citizen Services',
               title: AppStrings.servicesHeading,
@@ -27,12 +27,11 @@ class ServicesScreen extends StatelessWidget {
           ),
         ),
         SliverPadding(
-          padding: const EdgeInsets.fromLTRB(AppSpacing.gutter,
-              AppSpacing.md, AppSpacing.gutter, AppSpacing.xxl),
+          padding: const EdgeInsets.fromLTRB(AppSpacing.gutter, AppSpacing.md,
+              AppSpacing.gutter, AppSpacing.xxl),
           sliver: SliverLayoutBuilder(
             builder: (context, constraints) {
-              final columns =
-                  constraints.crossAxisExtent >= 560 ? 3 : 2;
+              final columns = constraints.crossAxisExtent >= 560 ? 3 : 2;
               return SliverGrid(
                 gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
                   crossAxisCount: columns,
@@ -41,8 +40,7 @@ class ServicesScreen extends StatelessWidget {
                   childAspectRatio: 0.92,
                 ),
                 delegate: SliverChildBuilderDelegate(
-                  (context, i) =>
-                      ServiceCard(item: ServiceItem.catalog[i]),
+                  (context, i) => ServiceCard(item: ServiceItem.catalog[i]),
                   childCount: ServiceItem.catalog.length,
                 ),
               );

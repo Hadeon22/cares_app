@@ -112,6 +112,7 @@ class _GisMapViewState extends State<GisMapView> {
 
   @override
   Widget build(BuildContext context) {
+    if (widget.showReportPins) IncidentStore.instance.ensureLoaded();
     return FutureBuilder<GisMapData>(
       future: GisMapData.load(),
       builder: (context, snapshot) {

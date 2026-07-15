@@ -32,14 +32,14 @@ class _ServiceCardState extends State<ServiceCard> {
       curve: Curves.easeOut,
       child: Material(
         color: item.isEmergency
-            ? AppColors.emergency.withOpacity(0.06)
+            ? AppColors.emergency.withValues(alpha: 0.06)
             : AppColors.surface,
         borderRadius: BorderRadius.circular(AppRadii.md),
         elevation: 0,
         child: InkWell(
           borderRadius: BorderRadius.circular(AppRadii.md),
-          splashColor: accent.withOpacity(0.12),
-          highlightColor: accent.withOpacity(0.05),
+          splashColor: accent.withValues(alpha: 0.12),
+          highlightColor: accent.withValues(alpha: 0.05),
           onTap: widget.onTap ?? () => openService(context, item.action),
           onHighlightChanged: (v) => setState(() => _pressed = v),
           child: Ink(
@@ -47,12 +47,12 @@ class _ServiceCardState extends State<ServiceCard> {
               borderRadius: BorderRadius.circular(AppRadii.md),
               border: Border.all(
                 color: item.isEmergency
-                    ? AppColors.emergency.withOpacity(0.35)
+                    ? AppColors.emergency.withValues(alpha: 0.35)
                     : AppColors.divider,
               ),
               boxShadow: [
                 BoxShadow(
-                  color: AppColors.navy.withOpacity(0.05),
+                  color: AppColors.navy.withValues(alpha: 0.05),
                   blurRadius: 10,
                   offset: const Offset(0, 4),
                 ),
@@ -65,7 +65,7 @@ class _ServiceCardState extends State<ServiceCard> {
                 Container(
                   padding: const EdgeInsets.all(10),
                   decoration: BoxDecoration(
-                    color: accent.withOpacity(0.10),
+                    color: accent.withValues(alpha: 0.10),
                     borderRadius: BorderRadius.circular(AppRadii.sm),
                   ),
                   child: Icon(item.icon, color: accent, size: 24),

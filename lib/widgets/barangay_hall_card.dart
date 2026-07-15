@@ -18,7 +18,7 @@ class BarangayHallCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(AppRadii.lg),
         boxShadow: [
           BoxShadow(
-            color: AppColors.navy.withOpacity(0.18),
+            color: AppColors.navy.withValues(alpha: 0.18),
             blurRadius: 24,
             offset: const Offset(0, 10),
           ),
@@ -57,7 +57,7 @@ class BarangayHallCard extends StatelessWidget {
                     end: Alignment.bottomCenter,
                     colors: [
                       Colors.transparent,
-                      AppColors.navyDeep.withOpacity(0.85),
+                      AppColors.navyDeep.withValues(alpha: 0.85),
                     ],
                   ),
                 ),

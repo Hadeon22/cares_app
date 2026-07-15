@@ -3,13 +3,15 @@ import 'package:flutter/material.dart';
 import '../core/constants/app_colors.dart';
 import '../core/constants/app_constants.dart';
 import '../core/utils/fade_slide.dart';
+import '../data/api_client.dart';
 import '../data/session.dart';
+import '../widgets/app_toast.dart';
 import '../widgets/common.dart';
 import 'claim_account_screen.dart';
 
 /// Sign-in screen — mobile version of system.html.
-/// Role chips (Admin / Officer / Resident) + credentials.
-/// Residents return to the portal; staff land on the MIS dashboard.
+/// Signs in against POST /api/auth/login: the account's role (staff or
+/// resident) comes from the database, same as the web system.
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
 
@@ -18,10 +20,9 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _LoginScreenState extends State<LoginScreen> {
-  UserRole _role = UserRole.admin;
-  final _userCtrl =
-      TextEditingController(text: 'admin@condelabac.gov.ph');
-  final _passCtrl = TextEditingController(text: '••••••••');
+  final _userCtrl = TextEditingController();
+  final _passCtrl = TextEditingController();
+  bool _busy = false;
 
   @override
   void dispose() {
@@ -30,10 +31,26 @@ class _LoginScreenState extends State<LoginScreen> {
     super.dispose();
   }
 
-  void _signIn() {
-    AppSession.instance.signIn(_role, _userCtrl.text);
-    // main.dart listens to the session and swaps in the right shell.
-    Navigator.of(context).popUntil((r) => r.isFirst);
+  Future<void> _signIn() async {
+    if (_busy) return;
+    final email = _userCtrl.text.trim();
+    if (email.isEmpty || _passCtrl.text.isEmpty) {
+      showAppToast(context, 'Please enter your email and password.',
+          icon: Icons.error_outline);
+      return;
+    }
+    setState(() => _busy = true);
+    try {
+      await AppSession.instance.signIn(email, _passCtrl.text);
+      if (!mounted) return;
+      // main.dart listens to the session and swaps in the right shell.
+      Navigator.of(context).popUntil((r) => r.isFirst);
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      showAppToast(context, e.message, icon: Icons.error_outline);
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
   }
 
   @override
@@ -57,14 +74,14 @@ class _LoginScreenState extends State<LoginScreen> {
               child: FadeSlide(
                 child: Container(
                   constraints: const BoxConstraints(maxWidth: 430),
-                  padding: const EdgeInsets.fromLTRB(
-                      AppSpacing.lg, AppSpacing.xl, AppSpacing.lg, AppSpacing.lg),
+                  padding: const EdgeInsets.fromLTRB(AppSpacing.lg,
+                      AppSpacing.xl, AppSpacing.lg, AppSpacing.lg),
                   decoration: BoxDecoration(
                     color: AppColors.surface,
                     borderRadius: BorderRadius.circular(AppRadii.lg),
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.black.withOpacity(0.35),
+                        color: Colors.black.withValues(alpha: 0.35),
                         blurRadius: 40,
                         offset: const Offset(0, 18),
                       ),
@@ -78,7 +95,8 @@ class _LoginScreenState extends State<LoginScreen> {
                       Text(
                         'Brgy. Conde Labac',
                         textAlign: TextAlign.center,
-                        style: text.headlineSmall?.copyWith(color: AppColors.ink),
+                        style:
+                            text.headlineSmall?.copyWith(color: AppColors.ink),
                       ),
                       const SizedBox(height: 4),
                       Text(
@@ -89,22 +107,11 @@ class _LoginScreenState extends State<LoginScreen> {
                       ),
                       const SizedBox(height: AppSpacing.lg),
 
-                      // ── Role chips ─────────────────────────────
-                      Row(
-                        children: [
-                          for (final role in UserRole.values) ...[
-                            Expanded(child: _roleChip(role)),
-                            if (role != UserRole.values.last)
-                              const SizedBox(width: AppSpacing.sm),
-                          ],
-                        ],
-                      ),
-                      const SizedBox(height: AppSpacing.lg),
-
                       _label('Username / Email'),
                       TextField(
                         controller: _userCtrl,
                         keyboardType: TextInputType.emailAddress,
+                        autofillHints: const [AutofillHints.username],
                         decoration: const InputDecoration(
                           hintText: 'e.g. admin@condelabac.gov.ph',
                         ),
@@ -114,19 +121,27 @@ class _LoginScreenState extends State<LoginScreen> {
                       TextField(
                         controller: _passCtrl,
                         obscureText: true,
-                        decoration:
-                            const InputDecoration(hintText: '••••••••'),
+                        autofillHints: const [AutofillHints.password],
+                        decoration: const InputDecoration(hintText: '••••••••'),
                         onSubmitted: (_) => _signIn(),
                       ),
                       const SizedBox(height: AppSpacing.lg),
 
                       FilledButton(
-                        onPressed: _signIn,
+                        onPressed: _busy ? null : _signIn,
                         style: FilledButton.styleFrom(
                           backgroundColor: AppColors.navy,
                           foregroundColor: AppColors.onNavy,
                         ),
-                        child: const Text('Sign In to System'),
+                        child: _busy
+                            ? const SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(
+                                    strokeWidth: 2.2,
+                                    color: AppColors.gold),
+                              )
+                            : const Text('Sign In to System'),
                       ),
                       const SizedBox(height: AppSpacing.md),
 
@@ -160,8 +175,8 @@ class _LoginScreenState extends State<LoginScreen> {
                         label: const Text('Back to C.A.R.E.S. Landing Page'),
                         style: TextButton.styleFrom(
                           foregroundColor: AppColors.inkMuted,
-                          textStyle: text.labelSmall
-                              ?.copyWith(letterSpacing: 0.4),
+                          textStyle:
+                              text.labelSmall?.copyWith(letterSpacing: 0.4),
                         ),
                       ),
                     ],
@@ -186,32 +201,4 @@ class _LoginScreenState extends State<LoginScreen> {
               ),
         ),
       );
-
-  Widget _roleChip(UserRole role) {
-    final selected = _role == role;
-    return InkWell(
-      borderRadius: BorderRadius.circular(AppRadii.sm),
-      onTap: () => setState(() => _role = role),
-      child: AnimatedContainer(
-        duration: AppDurations.fast,
-        padding: const EdgeInsets.symmetric(vertical: 10),
-        decoration: BoxDecoration(
-          color: selected ? AppColors.navy : AppColors.surface,
-          borderRadius: BorderRadius.circular(AppRadii.sm),
-          border: Border.all(
-            color: selected ? AppColors.navy : AppColors.divider,
-            width: 1.4,
-          ),
-        ),
-        child: Text(
-          role.label,
-          textAlign: TextAlign.center,
-          style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                color: selected ? AppColors.gold : AppColors.inkMuted,
-                fontWeight: FontWeight.w800,
-              ),
-        ),
-      ),
-    );
-  }
 }

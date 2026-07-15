@@ -23,8 +23,8 @@ class ProfileScreen extends StatelessWidget {
 
     return ListView(
       physics: const BouncingScrollPhysics(),
-      padding: const EdgeInsets.fromLTRB(AppSpacing.gutter,
-          AppSpacing.lg, AppSpacing.gutter, AppSpacing.xxl),
+      padding: const EdgeInsets.fromLTRB(
+          AppSpacing.gutter, AppSpacing.lg, AppSpacing.gutter, AppSpacing.xxl),
       children: [
         FadeSlide(
           child: Container(
@@ -77,10 +77,10 @@ class ProfileScreen extends StatelessWidget {
           ),
         ),
         const SizedBox(height: AppSpacing.lg),
-        FadeSlide(
-          delay: const Duration(milliseconds: 120),
+        const FadeSlide(
+          delay: Duration(milliseconds: 120),
           child: _ActionGroup(
-            children: const [
+            children: [
               _ProfileTile(
                   icon: Icons.receipt_long_outlined,
                   title: 'My Requests',
@@ -195,8 +195,7 @@ class _ActionGroup extends StatelessWidget {
         children: [
           for (var i = 0; i < children.length; i++) ...[
             children[i],
-            if (i != children.length - 1)
-              const Divider(indent: 60),
+            if (i != children.length - 1) const Divider(indent: 60),
           ],
         ],
       ),
@@ -227,7 +226,7 @@ class _ProfileTile extends StatelessWidget {
       leading: Container(
         padding: const EdgeInsets.all(8),
         decoration: BoxDecoration(
-          color: color.withOpacity(0.08),
+          color: color.withValues(alpha: 0.08),
           borderRadius: BorderRadius.circular(AppRadii.sm),
         ),
         child: Icon(icon, color: color, size: 20),
@@ -246,8 +245,8 @@ class _ProfileTile extends StatelessWidget {
                   .textTheme
                   .bodySmall
                   ?.copyWith(color: AppColors.inkMuted)),
-      trailing: const Icon(Icons.chevron_right,
-          color: AppColors.inkMuted, size: 20),
+      trailing:
+          const Icon(Icons.chevron_right, color: AppColors.inkMuted, size: 20),
     );
   }
 }

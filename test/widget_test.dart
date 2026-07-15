@@ -27,11 +27,12 @@ void main() {
     await tester.pumpWidget(const CaresApp());
     await tester.pump(const Duration(seconds: 1));
 
-    AppSession.instance.signIn(UserRole.admin, 'admin@condelabac.gov.ph');
+    AppSession.instance.debugSignIn(
+        UserRole.admin, 'Juan D. Administrator', 'admin@condelabac.gov.ph');
     await tester.pumpAndSettle();
 
     expect(find.text('Dashboard'), findsWidgets);
-    expect(find.textContaining('Good morning'), findsOneWidget);
+    expect(find.textContaining('Good day'), findsOneWidget);
   });
 
   testWidgets('resident sign-in stays on the portal with a welcome',
@@ -39,7 +40,8 @@ void main() {
     await tester.pumpWidget(const CaresApp());
     await tester.pump(const Duration(seconds: 1));
 
-    AppSession.instance.signIn(UserRole.resident, 'pedro@example.com');
+    AppSession.instance
+        .debugSignIn(UserRole.resident, 'Pedro S. Santos', 'pedro@example.com');
     await tester.pumpAndSettle();
 
     // Still on the portal (bottom navigation present, Sign In gone).

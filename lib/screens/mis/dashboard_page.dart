@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_constants.dart';
 import '../../data/session.dart';
+import '../../data/stores.dart';
 import '../../widgets/app_toast.dart';
 import '../../widgets/charts.dart';
 import '../../widgets/form_widgets.dart';
@@ -29,94 +30,126 @@ class _DashboardPageState extends State<DashboardPage> {
     Future.delayed(const Duration(milliseconds: 1200), () {
       if (!mounted) return;
       setState(() {
-        _aiSummary =
-            'AI Summary: Recent incidents show clustering in Purok 3; '
+        _aiSummary = 'AI Summary: Recent incidents show clustering in Purok 3; '
             'recommend resource allocation and a targeted community outreach.';
       });
-      showAppToast(context, 'AI Summary generated',
-          icon: Icons.edit_outlined);
+      showAppToast(context, 'AI Summary generated', icon: Icons.edit_outlined);
     });
+  }
+
+  static const _purokColors = [
+    Color(0xFF3B82F6),
+    Color(0xFF22C55E),
+    Color(0xFFEF4444),
+    Color(0xFFF59E0B),
+    Color(0xFF8B5CF6),
+  ];
+
+  String _timeAgo(DateTime ts) {
+    final diff = DateTime.now().difference(ts);
+    if (diff.inMinutes < 1) return 'just now';
+    if (diff.inMinutes < 60) return '${diff.inMinutes}m ago';
+    if (diff.inHours < 24) return '${diff.inHours}h ago';
+    return '${diff.inDays}d ago';
   }
 
   @override
   Widget build(BuildContext context) {
-    final isOfficer = AppSession.instance.role == UserRole.officer;
+    final stats = DashboardStats.instance;
+    stats.ensureLoaded();
+    AuditLog.instance.ensureLoaded();
+    return AnimatedBuilder(
+      animation: Listenable.merge([stats, AuditLog.instance]),
+      builder: (context, _) => _buildBody(context, stats),
+    );
+  }
+
+  Widget _buildBody(BuildContext context, DashboardStats stats) {
+    final session = AppSession.instance;
+    final recentAudit = AuditLog.instance.entries.take(5).toList();
 
     return ListView(
-      padding: const EdgeInsets.fromLTRB(AppSpacing.gutter, AppSpacing.lg,
-          AppSpacing.gutter, AppSpacing.xxl),
+      padding: const EdgeInsets.fromLTRB(
+          AppSpacing.gutter, AppSpacing.lg, AppSpacing.gutter, AppSpacing.xxl),
       children: [
         MisPageHeader(
-          title:
-              'Good morning, ${isOfficer ? 'Officer Reyes' : 'Administrator'}! 👋',
+          title: 'Good day, ${session.shortName.isEmpty ? 'there' : session.shortName}! 👋',
           desc: "Here's what's happening in Barangay Conde Labac today",
         ),
-        const KpiGrid(cards: [
+        if (stats.error != null)
+          AlertBanner(
+            kind: AlertKind.warning,
+            child: Text('Could not load live stats: ${stats.error}'),
+          ),
+        KpiGrid(cards: [
           KpiCard(
               label: 'Registered Residents',
-              value: '1,248',
-              trend: '↑ +23 this month',
-              trendUp: true),
+              value: '${stats.residents}',
+              trend: '${stats.households} households'),
           KpiCard(
               label: 'Certificates Issued',
-              value: '87',
-              trend: '↑ +12% vs last month',
-              trendUp: true,
+              value: '${stats.certificatesByStatus['issued'] ?? 0}',
+              trend: '${stats.certificatesPending} pending',
               accent: KpiAccent.success),
           KpiCard(
               label: 'Active Incidents',
-              value: '3',
-              trend: '↑ +2 this week',
+              value: '${stats.incidentsOpen}',
+              trend: '${stats.incidentsThisMonth} filed this month',
               trendUp: false,
               accent: KpiAccent.danger),
           KpiCard(
               label: 'Pending Requests',
-              value: '19',
-              trend: '−5 resolved today',
-              trendUp: false,
+              value: '${stats.certificatesPending}',
               accent: KpiAccent.info),
           KpiCard(
               label: 'Feedback Score',
-              value: '4.2',
-              trend: '↑ 0.3 vs last quarter',
+              value: stats.feedbackAvg == null
+                  ? '—'
+                  : stats.feedbackAvg!.toStringAsFixed(1),
+              trend: '${stats.feedbackNew} unreviewed',
               trendUp: true),
           KpiCard(
-              label: 'Resident Population',
-              value: '5,612',
-              trend: 'Last census: Jan 2025'),
+              label: 'Accounts Claimed',
+              value: '${stats.accountsClaimed}',
+              trend: 'Resident portal logins'),
         ]),
         const SizedBox(height: AppSpacing.md),
-        const AlertBanner(
-          kind: AlertKind.danger,
-          child: Text.rich(TextSpan(children: [
-            TextSpan(
-                text: 'Critical Incident: ',
-                style: TextStyle(fontWeight: FontWeight.w800)),
-            TextSpan(
-                text: 'Flooding reported at Purok 3 — Sitio Malinis. '
-                    '14 families affected. Response team dispatched.'),
-          ])),
-        ),
-        const AlertBanner(
-          kind: AlertKind.warning,
-          child: Text.rich(TextSpan(children: [
-            TextSpan(
-                text: '12 pending account claims ',
-                style: TextStyle(fontWeight: FontWeight.w800)),
-            TextSpan(text: 'require document verification before approval.'),
-          ])),
-        ),
+        if (stats.incidentsOpen > 0)
+          AlertBanner(
+            kind: AlertKind.danger,
+            child: Text.rich(TextSpan(children: [
+              TextSpan(
+                  text: '${stats.incidentsOpen} open incident'
+                      '${stats.incidentsOpen == 1 ? '' : 's'}: ',
+                  style: const TextStyle(fontWeight: FontWeight.w800)),
+              const TextSpan(
+                  text: 'review the blotter queue and dispatch/resolve where '
+                      'needed.'),
+            ])),
+          ),
+        if (stats.certificatesPending > 0)
+          AlertBanner(
+            kind: AlertKind.warning,
+            child: Text.rich(TextSpan(children: [
+              TextSpan(
+                  text: '${stats.certificatesPending} pending certificate '
+                      'request${stats.certificatesPending == 1 ? '' : 's'} ',
+                  style: const TextStyle(fontWeight: FontWeight.w800)),
+              const TextSpan(text: 'awaiting review and approval.'),
+            ])),
+          ),
         MisCard(
-          title: 'Certificate Requests (30 days)',
+          title: 'Certificate Requests by Status',
           action: 'View all',
           onAction: () => widget.onNavigate('certificates'),
-          child: const SimpleBarChart(
+          child: SimpleBarChart(
             barColor: AppColors.gold,
             data: [
-              ChartSlice('Wk 1', 18, AppColors.gold),
-              ChartSlice('Wk 2', 24, AppColors.gold),
-              ChartSlice('Wk 3', 21, AppColors.gold),
-              ChartSlice('Wk 4', 24, AppColors.gold),
+              for (final s in const ['pending', 'approved', 'issued', 'rejected'])
+                ChartSlice(
+                    s[0].toUpperCase() + s.substring(1),
+                    (stats.certificatesByStatus[s] ?? 0).toDouble(),
+                    AppColors.gold),
             ],
           ),
         ),
@@ -124,30 +157,21 @@ class _DashboardPageState extends State<DashboardPage> {
           title: 'Recent Activity',
           action: 'View log',
           onAction: () => widget.onNavigate('audit'),
-          child: const Column(
-            children: [
-              TimelineItem(
-                  color: Color(0xFF22C55E),
-                  title: 'Barangay Clearance issued — Pedro Santos',
-                  meta: 'Today, 10:45 AM · Officer Reyes'),
-              TimelineItem(
-                  color: Color(0xFFEF4444),
-                  title: 'Incident #INC-2025-041 logged — Flooding, Purok 3',
-                  meta: 'Today, 09:12 AM · System'),
-              TimelineItem(
-                  color: Color(0xFF22C55E),
-                  title: 'Account claim approved — Maria dela Cruz',
-                  meta: 'Today, 08:55 AM · Admin'),
-              TimelineItem(
-                  color: Color(0xFF94A3B8),
-                  title: 'Certificate request submitted — Jose Reyes',
-                  meta: 'Yesterday, 4:30 PM · Self-service'),
-              TimelineItem(
-                  color: Color(0xFF94A3B8),
-                  title: 'Feedback received — 4★ rating, Barangay Services',
-                  meta: 'Yesterday, 3:12 PM · Anonymous'),
-            ],
-          ),
+          child: recentAudit.isEmpty
+              ? const EmptyState('No recorded activity yet.')
+              : Column(
+                  children: [
+                    for (final e in recentAudit)
+                      TimelineItem(
+                        color: e.level == AuditLevel.critical ||
+                                e.level == AuditLevel.warning
+                            ? const Color(0xFFEF4444)
+                            : const Color(0xFF22C55E),
+                        title: e.details.isEmpty ? e.action : e.details,
+                        meta: '${_timeAgo(e.ts)} · ${e.user}',
+                      ),
+                  ],
+                ),
         ),
         MisCard(
           title: 'Services Quick Access',
@@ -171,14 +195,14 @@ class _DashboardPageState extends State<DashboardPage> {
           ),
         ),
         MisCard(
-          title: 'Incident Heatmap by Purok',
-          child: const DonutChart(data: [
-            ChartSlice('Purok 1', 4, Color(0xFF3B82F6)),
-            ChartSlice('Purok 2', 7, Color(0xFF22C55E)),
-            ChartSlice('Purok 3', 12, Color(0xFFEF4444)),
-            ChartSlice('Purok 4', 3, Color(0xFFF59E0B)),
-            ChartSlice('Purok 5', 6, Color(0xFF8B5CF6)),
-          ]),
+          title: 'Residents by Purok',
+          child: stats.byPurok.isEmpty
+              ? const EmptyState('No purok data yet.')
+              : DonutChart(data: [
+                  for (final (i, e) in stats.byPurok.entries.indexed)
+                    ChartSlice(e.key, e.value.toDouble(),
+                        _purokColors[i % _purokColors.length]),
+                ]),
         ),
         MisCard(
           title: 'AI Summaries',
@@ -230,8 +254,8 @@ class _DashboardPageState extends State<DashboardPage> {
   static final _outlineStyle = OutlinedButton.styleFrom(
     foregroundColor: AppColors.navy,
     side: const BorderSide(color: AppColors.divider),
-    padding: const EdgeInsets.symmetric(
-        horizontal: AppSpacing.md, vertical: 10),
+    padding:
+        const EdgeInsets.symmetric(horizontal: AppSpacing.md, vertical: 10),
   );
 
   Widget _quickBtn(IconData icon, String label, VoidCallback onTap) {

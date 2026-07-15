@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_constants.dart';
+import '../../data/session.dart';
 import '../../data/stores.dart';
 import '../../widgets/app_toast.dart';
 import '../../widgets/form_widgets.dart';
@@ -30,24 +31,38 @@ class _FeedbackScreenState extends State<FeedbackScreen> {
     super.dispose();
   }
 
-  void _submit() {
+  bool _busy = false;
+
+  Future<void> _submit() async {
+    if (_busy) return;
     if (_comment.text.trim().isEmpty) {
       showAppToast(context, 'Please enter a comment or suggestion.',
           icon: Icons.error_outline);
       return;
     }
-    FeedbackStore.instance.add(
-      rating: _rating,
-      category: _category,
-      comment: _comment.text.trim(),
-      name: _name.text,
-      contact: _contact.text.trim(),
-    );
+    setState(() => _busy = true);
+    try {
+      await FeedbackStore.instance.add(
+        rating: _rating,
+        category: _category,
+        comment: _comment.text.trim(),
+        name: _name.text,
+        contact: _contact.text.trim(),
+        accountId: AppSession.instance.accountId,
+      );
+    } catch (e) {
+      if (mounted) {
+        setState(() => _busy = false);
+        showAppToast(context, e.toString(), icon: Icons.error_outline);
+      }
+      return;
+    }
     AuditLog.instance.log(
       'FEEDBACK_SUBMIT',
       'Feedback submitted — rated $_rating/5 (${kRatingLabels[_rating]})',
       category: AuditCategory.feedback,
     );
+    if (!mounted) return;
     Navigator.of(context).pop();
     showAppToast(context, 'Feedback submitted! Thank you for your input.',
         icon: Icons.chat_bubble_outline);
@@ -122,8 +137,13 @@ class _FeedbackScreenState extends State<FeedbackScreen> {
           ),
           const SizedBox(height: AppSpacing.sm),
           FilledButton.icon(
-            onPressed: _submit,
-            icon: const Icon(Icons.check, size: 18),
+            onPressed: _busy ? null : _submit,
+            icon: _busy
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2))
+                : const Icon(Icons.check, size: 18),
             label: const Text('Submit Feedback'),
           ),
           const SizedBox(height: AppSpacing.sm),

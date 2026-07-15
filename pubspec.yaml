@@ -13,11 +13,19 @@ dependencies:
   flutter:
     sdk: flutter
   google_fonts: ^6.2.1
+  http: ^1.2.2
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^4.0.0
+  flutter_launcher_icons: ^0.14.3
+
+# path_provider_foundation ≥2.5 pulls in the `objective_c` native-assets
+# package, whose Windows build breaks on paths with spaces (C:\Users\Nitro V 15).
+# It's an iOS/macOS-only plugin, so pinning the older version is safe here.
+dependency_overrides:
+  path_provider_foundation: 2.4.1
 
 flutter:
   uses-material-design: true
@@ -25,6 +33,22 @@ flutter:
   assets:
     - assets/images/
     - assets/gis/
+
+# Launcher icons — regenerate with:  dart run flutter_launcher_icons
+# Source images live in assets/icon/ (composed from the barangay seal:
+# app_icon.png = seal on navy, app_icon_foreground.png = padded transparent
+# seal for Android's adaptive-icon safe zone).
+flutter_launcher_icons:
+  image_path: "assets/icon/app_icon.png"
+  android: true
+  adaptive_icon_background: "#0B1D3A"
+  adaptive_icon_foreground: "assets/icon/app_icon_foreground.png"
+  ios: true
+  remove_alpha_ios: true
+  windows:
+    generate: true
+  web:
+    generate: true
 
 # ─────────────────────────────────────────────────────────────
 # NOTE: Place the following images inside assets/images/

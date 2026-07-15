@@ -54,13 +54,13 @@ class HomeScreen extends StatelessWidget {
           ),
 
         // ── Barangay Hall showcase ─────────────────────────────
-        SliverPadding(
-          padding: const EdgeInsets.fromLTRB(
+        const SliverPadding(
+          padding: EdgeInsets.fromLTRB(
               AppSpacing.gutter, AppSpacing.lg, AppSpacing.gutter, 0),
           sliver: SliverToBoxAdapter(
             child: FadeSlide(
-              delay: const Duration(milliseconds: 380),
-              child: const BarangayHallCard(),
+              delay: Duration(milliseconds: 380),
+              child: BarangayHallCard(),
             ),
           ),
         ),
@@ -121,10 +121,10 @@ class HomeScreen extends StatelessWidget {
         ),
 
         // ── Latest announcements ───────────────────────────────
-        SliverPadding(
-          padding: const EdgeInsets.fromLTRB(
+        const SliverPadding(
+          padding: EdgeInsets.fromLTRB(
               AppSpacing.gutter, AppSpacing.xl, AppSpacing.gutter, 0),
-          sliver: const SliverToBoxAdapter(
+          sliver: SliverToBoxAdapter(
             child: SectionHeader(
               eyebrow: 'Community Bulletin',
               title: 'Latest announcements',
@@ -176,8 +176,7 @@ class _ResidentWelcomeCard extends StatelessWidget {
               children: [
                 const TextSpan(text: 'Mabuhay, '),
                 TextSpan(
-                    text: name,
-                    style: const TextStyle(color: AppColors.gold)),
+                    text: name, style: const TextStyle(color: AppColors.gold)),
                 const TextSpan(text: '!'),
               ],
             ),

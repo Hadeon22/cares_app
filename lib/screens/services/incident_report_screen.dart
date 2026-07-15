@@ -57,7 +57,10 @@ class _IncidentReportScreenState extends State<IncidentReportScreen> {
     super.dispose();
   }
 
-  void _submit() {
+  bool _busy = false;
+
+  Future<void> _submit() async {
+    if (_busy) return;
     if (_complainant.text.trim().isEmpty) {
       showAppToast(context, "Please enter the complainant's full name.",
           icon: Icons.error_outline);
@@ -75,21 +78,35 @@ class _IncidentReportScreenState extends State<IncidentReportScreen> {
       return;
     }
 
-    final report = IncidentStore.instance.file(
-      typeKey: _type.key,
-      complainant: _complainant.text.trim(),
-      narration: _narration.text.trim(),
-      contact: _contact.text.trim(),
-      respondent: _type.interpersonal ? _respondent.text.trim() : '',
-      witnesses: _type.interpersonal ? _witnesses.text.trim() : '',
-      location: 'Pinned on GIS map',
-      mapPoint: _pickedPoint,
-    );
+    setState(() => _busy = true);
+    final session = AppSession.instance;
+    final IncidentReport report;
+    try {
+      report = await IncidentStore.instance.file(
+        typeKey: _type.key,
+        complainant: _complainant.text.trim(),
+        narration: _narration.text.trim(),
+        contact: _contact.text.trim(),
+        respondent: _type.interpersonal ? _respondent.text.trim() : '',
+        witnesses: _type.interpersonal ? _witnesses.text.trim() : '',
+        location: 'Pinned on GIS map',
+        mapPoint: _pickedPoint,
+        complainantId: session.residentId,
+        accountId: session.accountId,
+      );
+    } catch (e) {
+      if (mounted) {
+        setState(() => _busy = false);
+        showAppToast(context, e.toString(), icon: Icons.error_outline);
+      }
+      return;
+    }
     AuditLog.instance.log(
       'BLOTTER_SUBMIT',
       'Blotter/incident report filed (Case No: ${report.caseNo})',
       category: AuditCategory.concern,
     );
+    if (!mounted) return;
     Navigator.of(context).pop();
     showAppToast(context, 'Report filed — Case No. ${report.caseNo}',
         icon: Icons.campaign_outlined);
@@ -200,12 +217,18 @@ class _IncidentReportScreenState extends State<IncidentReportScreen> {
           ),
           const SizedBox(height: AppSpacing.sm),
           FilledButton.icon(
-            onPressed: _submit,
+            onPressed: _busy ? null : _submit,
             style: FilledButton.styleFrom(
               backgroundColor: AppColors.flagRed,
               foregroundColor: Colors.white,
             ),
-            icon: const Icon(Icons.check, size: 18),
+            icon: _busy
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(
+                        strokeWidth: 2, color: Colors.white))
+                : const Icon(Icons.check, size: 18),
             label: const Text('Submit Report'),
           ),
           const SizedBox(height: AppSpacing.sm),

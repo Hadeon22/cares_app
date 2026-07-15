@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 
+import 'api_client.dart';
 import 'stores.dart';
 
 /// User roles mirrored from the web system (js/shell.js).
@@ -32,53 +33,107 @@ extension UserRoleLabel on UserRole {
   bool get isStaff => this != UserRole.resident;
 }
 
-/// Active session — mirrors the web's `ibmdss.session` localStorage record.
-/// Demo credentials follow system.html: each role signs in as a fixed persona.
+/// Active session — mirrors the web's `ibmdss.session` localStorage record,
+/// but signed in for real against POST /api/auth/login (the same accounts
+/// table the web system uses).
 class AppSession extends ChangeNotifier {
   AppSession._() {
     AuditLog.instance.currentUser =
         () => isSignedIn ? _displayName : 'Guest';
     AuditLog.instance.currentRole =
         () => _role?.label ?? 'Visitor';
+    AuditLog.instance.currentAccountId = () => _accountId;
   }
   static final AppSession instance = AppSession._();
 
   UserRole? _role;
+  String _serverRole = '';
   String _displayName = '';
   String _initials = '';
   String _user = '';
+  int? _accountId;
+  int? _residentId;
 
   bool get isSignedIn => _role != null;
   UserRole? get role => _role;
+
+  /// The exact role string from the account table
+  /// (Admin / Officer / Staff / Viewer / Resident).
+  String get serverRole => _serverRole;
   String get displayName => _displayName;
   String get initials => _initials;
   String get user => _user;
+  int? get accountId => _accountId;
+  int? get residentId => _residentId;
 
   /// First two words of the display name (web: shortName).
   String get shortName =>
       _displayName.split(' ').take(2).join(' ');
 
-  static const _names = {
-    UserRole.admin: 'Juan D. Administrator',
-    UserRole.officer: 'Maria R. Officer',
-    UserRole.resident: 'Pedro S. Santos',
-  };
-  static const _initialsMap = {
-    UserRole.admin: 'JD',
-    UserRole.officer: 'MR',
-    UserRole.resident: 'PS',
-  };
+  /// account.role → the app's three-way role. Staff/Viewer get the Officer
+  /// experience (MIS access without admin-only pages), same as the web.
+  static UserRole _mapRole(String role) {
+    switch (role) {
+      case 'Admin':
+        return UserRole.admin;
+      case 'Officer':
+      case 'Staff':
+      case 'Viewer':
+        return UserRole.officer;
+      default:
+        return UserRole.resident;
+    }
+  }
 
-  void signIn(UserRole role, String user) {
-    _role = role;
-    _displayName = _names[role]!;
-    _initials = _initialsMap[role]!;
-    _user = user.trim().isEmpty ? 'User' : user.trim();
+  /// "Santos, Pedro J." or "Pedro Santos" → "PS".
+  static String _deriveInitials(String name) {
+    if (name.contains(',')) {
+      final parts = name.split(',');
+      final surname = parts[0].trim();
+      final first = parts.length > 1 ? parts[1].trim() : '';
+      return '${first.isNotEmpty ? first[0] : '?'}'
+              '${surname.isNotEmpty ? surname[0] : ''}'
+          .toUpperCase();
+    }
+    final words = name.split(' ').where((w) => w.isNotEmpty).toList();
+    if (words.isEmpty) return '?';
+    final first = words.first[0];
+    final last = words.length > 1 ? words.last[0] : '';
+    return '$first$last'.toUpperCase();
+  }
+
+  /// Real login against the shared PostgreSQL accounts table.
+  /// Throws [ApiException] with a user-showable message on failure.
+  Future<void> signIn(String email, String password) async {
+    final res = await ApiClient.instance.post('/api/auth/login', {
+      'username': email.trim(),
+      'password': password,
+    }) as Map<String, dynamic>;
+
+    _serverRole = (res['role'] as String?) ?? 'Resident';
+    _role = _mapRole(_serverRole);
+    _displayName = (res['name'] as String?) ?? email.trim();
+    _initials = _deriveInitials(_displayName);
+    _user = (res['username'] as String?) ?? email.trim();
+    _accountId = res['account_id'] as int?;
+    _residentId = res['resident_id'] as int?;
+
     AuditLog.instance.log(
       'LOGIN',
-      '$_displayName signed in as ${role.label} ($_user)',
+      '$_displayName signed in as $_serverRole ($_user)',
       category: AuditCategory.auth,
     );
+    notifyListeners();
+  }
+
+  /// Offline sign-in for widget tests — sets session state without the API.
+  @visibleForTesting
+  void debugSignIn(UserRole role, String displayName, String email) {
+    _role = role;
+    _serverRole = role.label;
+    _displayName = displayName;
+    _initials = _deriveInitials(displayName);
+    _user = email;
     notifyListeners();
   }
 
@@ -89,9 +144,12 @@ class AppSession extends ChangeNotifier {
       category: AuditCategory.auth,
     );
     _role = null;
+    _serverRole = '';
     _displayName = '';
     _initials = '';
     _user = '';
+    _accountId = null;
+    _residentId = null;
     notifyListeners();
   }
 }

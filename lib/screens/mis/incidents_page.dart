@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_constants.dart';
+import '../../data/session.dart';
 import '../../data/stores.dart';
 import '../../screens/gis_map_screen.dart';
 import '../../screens/services/incident_report_screen.dart';
@@ -17,6 +18,7 @@ class IncidentsPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final store = IncidentStore.instance;
+    store.ensureLoaded();
     return AnimatedBuilder(
       animation: store,
       builder: (context, _) {
@@ -49,11 +51,20 @@ class IncidentsPage extends StatelessWidget {
               action: '⊕ File Incident',
               onAction: () => Navigator.of(context).push(MaterialPageRoute(
                   builder: (_) => const IncidentReportScreen())),
-              child: reports.isEmpty
-                  ? const EmptyState(
-                      'No incidents filed yet. Use File Incident to log one — '
-                      'it appears here and in the GIS Recent Community '
-                      'Reports feed.')
+              child: store.loading
+                  ? const Padding(
+                      padding: EdgeInsets.all(AppSpacing.lg),
+                      child: Center(
+                          child:
+                              CircularProgressIndicator(color: AppColors.gold)),
+                    )
+                  : store.error != null
+                      ? EmptyState('Could not load incidents.\n${store.error}')
+                      : reports.isEmpty
+                          ? const EmptyState(
+                              'No incidents filed yet. Use File Incident to '
+                              'log one — it appears here and in the GIS '
+                              'Recent Community Reports feed.')
                   : Column(
                       children: [
                         for (final r in reports)
@@ -125,7 +136,9 @@ class IncidentsPage extends StatelessWidget {
                                     if (r.resolved)
                                       TextButton(
                                         onPressed: () {
-                                          store.setResolved(r.caseNo, false);
+                                          store.setResolved(r.caseNo, false,
+                                              accountId: AppSession
+                                                  .instance.accountId);
                                           showAppToast(
                                               context, 'Incident reopened',
                                               icon: Icons.refresh);
@@ -140,7 +153,9 @@ class IncidentsPage extends StatelessWidget {
                                               vertical: 8),
                                         ),
                                         onPressed: () {
-                                          store.setResolved(r.caseNo, true);
+                                          store.setResolved(r.caseNo, true,
+                                              accountId: AppSession
+                                                  .instance.accountId);
                                           showAppToast(context,
                                               'Incident marked as resolved');
                                         },

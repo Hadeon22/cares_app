@@ -133,8 +133,8 @@ class AlertBanner extends StatelessWidget {
     required this.child,
   });
 
-  AlertBanner.text({super.key, required this.kind, required String text,
-      TextStyle? style})
+  AlertBanner.text(
+      {super.key, required this.kind, required String text, TextStyle? style})
       : child = Text(text, style: style);
 
   final AlertKind kind;
@@ -142,8 +142,11 @@ class AlertBanner extends StatelessWidget {
 
   static const _colors = {
     AlertKind.info: (Color(0xFFEFF6FF), Color(0xFF1D4ED8), Icons.info_outline),
-    AlertKind.success:
-        (Color(0xFFF0FDF4), Color(0xFF15803D), Icons.check_circle_outline),
+    AlertKind.success: (
+      Color(0xFFF0FDF4),
+      Color(0xFF15803D),
+      Icons.check_circle_outline
+    ),
     AlertKind.warning: (
       Color(0xFFFFFBEB),
       Color(0xFFB45309),
@@ -166,7 +169,7 @@ class AlertBanner extends StatelessWidget {
       decoration: BoxDecoration(
         color: bg,
         borderRadius: BorderRadius.circular(AppRadii.sm),
-        border: Border.all(color: fg.withOpacity(0.25)),
+        border: Border.all(color: fg.withValues(alpha: 0.25)),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,

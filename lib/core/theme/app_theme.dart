@@ -100,7 +100,7 @@ abstract class AppTheme {
       // ── Bottom navigation ──────────────────────────────────
       navigationBarTheme: NavigationBarThemeData(
         backgroundColor: AppColors.navy,
-        indicatorColor: AppColors.gold.withOpacity(0.18),
+        indicatorColor: AppColors.gold.withValues(alpha: 0.18),
         height: 68,
         labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
         iconTheme: WidgetStateProperty.resolveWith(

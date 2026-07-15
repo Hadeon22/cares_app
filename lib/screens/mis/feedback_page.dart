@@ -16,18 +16,17 @@ class FeedbackPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final store = FeedbackStore.instance;
+    store.ensureLoaded();
     return AnimatedBuilder(
       animation: store,
       builder: (context, _) {
         final all = store.all;
         final total = all.length;
-        final avg = total == 0
-            ? 0.0
-            : all.fold<int>(0, (s, f) => s + f.rating) / total;
+        final avg =
+            total == 0 ? 0.0 : all.fold<int>(0, (s, f) => s + f.rating) / total;
         final now = DateTime.now();
         final thisMonth = all
-            .where((f) =>
-                f.ts.year == now.year && f.ts.month == now.month)
+            .where((f) => f.ts.year == now.year && f.ts.month == now.month)
             .length;
 
         // Sentiment split: 4–5 positive, 3 neutral, 1–2 negative.
@@ -73,32 +72,41 @@ class FeedbackPage extends StatelessWidget {
               child: DonutChart(
                 isPie: true,
                 data: [
-                  ChartSlice('Positive', pos.toDouble(), const Color(0xFF22C55E)),
-                  ChartSlice('Neutral', neu.toDouble(), const Color(0xFF94A3B8)),
-                  ChartSlice('Negative', neg.toDouble(), const Color(0xFFEF4444)),
+                  ChartSlice(
+                      'Positive', pos.toDouble(), const Color(0xFF22C55E)),
+                  ChartSlice(
+                      'Neutral', neu.toDouble(), const Color(0xFF94A3B8)),
+                  ChartSlice(
+                      'Negative', neg.toDouble(), const Color(0xFFEF4444)),
                 ],
               ),
             ),
             MisCard(
               title: 'By Category',
-              child: const HBarList(data: [
-                ChartSlice('Barangay Services', 78, AppColors.gold),
-                ChartSlice('Peace & Order', 52, AppColors.gold),
-                ChartSlice('Cleanliness', 44, AppColors.gold),
-                ChartSlice('Infrastructure', 38, AppColors.gold),
-                ChartSlice('Officials', 32, AppColors.gold),
-                ChartSlice('Health Services', 40, AppColors.gold),
+              child: HBarList(data: [
+                for (final c in kFeedbackCategories)
+                  ChartSlice(c, store.countInCategory(c).toDouble(),
+                      AppColors.gold),
               ]),
             ),
             MisCard(
               title: 'Recent Feedback',
               action: '⊕ Submit Feedback',
-              onAction: () => Navigator.of(context).push(MaterialPageRoute(
-                  builder: (_) => const FeedbackScreen())),
-              child: all.isEmpty
-                  ? const EmptyState(
-                      'No feedback submitted yet. Submissions from residents '
-                      'will appear here.')
+              onAction: () => Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const FeedbackScreen())),
+              child: store.loading
+                  ? const Padding(
+                      padding: EdgeInsets.all(AppSpacing.lg),
+                      child: Center(
+                          child:
+                              CircularProgressIndicator(color: AppColors.gold)),
+                    )
+                  : store.error != null
+                      ? EmptyState('Could not load feedback.\n${store.error}')
+                      : all.isEmpty
+                          ? const EmptyState(
+                              'No feedback submitted yet. Submissions from '
+                              'residents will appear here.')
                   : Column(
                       children: [
                         for (final f in all)
@@ -109,8 +117,7 @@ class FeedbackPage extends StatelessWidget {
                             padding: const EdgeInsets.all(AppSpacing.sm + 4),
                             decoration: BoxDecoration(
                               color: AppColors.cream,
-                              borderRadius:
-                                  BorderRadius.circular(AppRadii.sm),
+                              borderRadius: BorderRadius.circular(AppRadii.sm),
                             ),
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
@@ -118,8 +125,7 @@ class FeedbackPage extends StatelessWidget {
                                 Wrap(
                                   spacing: 6,
                                   runSpacing: 4,
-                                  crossAxisAlignment:
-                                      WrapCrossAlignment.center,
+                                  crossAxisAlignment: WrapCrossAlignment.center,
                                   children: [
                                     Row(
                                       mainAxisSize: MainAxisSize.min,
@@ -141,8 +147,8 @@ class FeedbackPage extends StatelessWidget {
                                     Text(
                                       '${f.name} · '
                                       '${MaterialLocalizations.of(context).formatShortMonthDay(f.ts)}',
-                                      style: text.labelSmall?.copyWith(
-                                          color: AppColors.inkMuted),
+                                      style: text.labelSmall
+                                          ?.copyWith(color: AppColors.inkMuted),
                                     ),
                                   ],
                                 ),

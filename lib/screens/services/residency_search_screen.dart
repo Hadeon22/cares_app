@@ -21,14 +21,20 @@ class _ResidencySearchScreenState extends State<ResidencySearchScreen> {
   String? _category;
   String? _status;
 
+  @override
+  void initState() {
+    super.initState();
+    ResidentStore.instance.ensureLoaded();
+  }
+
   List<ResidentRecord> get _filtered {
     final nameQ = _name.toLowerCase();
-    return kResidents.where((r) {
+    return ResidentStore.instance.all.where((r) {
       if (nameQ.isNotEmpty && !r.name.toLowerCase().contains(nameQ)) {
         return false;
       }
       if (_purok != null && r.purok != _purok!.split(' – ').first) return false;
-      if (_category != null && r.category != _category) return false;
+      if (_category != null && !r.cats.contains(_category)) return false;
       if (_status != null && r.status != _status) return false;
       return true;
     }).toList();
@@ -36,12 +42,21 @@ class _ResidencySearchScreenState extends State<ResidencySearchScreen> {
 
   @override
   Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('Barangay Residency')),
+      body: AnimatedBuilder(
+        animation: ResidentStore.instance,
+        builder: (context, _) => _buildBody(context),
+      ),
+    );
+  }
+
+  Widget _buildBody(BuildContext context) {
+    final store = ResidentStore.instance;
     final results = _filtered;
     final text = Theme.of(context).textTheme;
 
-    return Scaffold(
-      appBar: AppBar(title: const Text('Barangay Residency')),
-      body: ListView(
+    return ListView(
         padding: const EdgeInsets.fromLTRB(AppSpacing.gutter, AppSpacing.lg,
             AppSpacing.gutter, AppSpacing.xxl),
         children: [
@@ -58,7 +73,7 @@ class _ResidencySearchScreenState extends State<ResidencySearchScreen> {
           AppDropdown<String?>(
             label: 'Purok / Zone',
             value: _purok,
-            items: [null, ...kPuroks],
+            items: const [null, ...kPuroks],
             itemLabel: (v) => v ?? 'All Puroks',
             onChanged: (v) => setState(() => _purok = v),
           ),
@@ -86,12 +101,43 @@ class _ResidencySearchScreenState extends State<ResidencySearchScreen> {
             ],
           ),
           Text(
-            'Showing ${results.length} result${results.length == 1 ? '' : 's'}',
+            store.loading
+                ? 'Loading resident records…'
+                : 'Showing ${results.length} result${results.length == 1 ? '' : 's'}',
             style: text.labelMedium?.copyWith(
                 color: AppColors.inkMuted, fontWeight: FontWeight.w700),
           ),
           const SizedBox(height: AppSpacing.sm),
-          if (results.isEmpty)
+          if (store.loading)
+            const Padding(
+              padding: EdgeInsets.all(AppSpacing.lg),
+              child:
+                  Center(child: CircularProgressIndicator(color: AppColors.gold)),
+            )
+          else if (store.error != null)
+            Container(
+              padding: const EdgeInsets.all(AppSpacing.lg),
+              decoration: BoxDecoration(
+                color: AppColors.surface,
+                borderRadius: BorderRadius.circular(AppRadii.md),
+                border: Border.all(color: AppColors.divider),
+              ),
+              child: Column(
+                children: [
+                  Text(
+                    'Could not load residents.\n${store.error}',
+                    textAlign: TextAlign.center,
+                    style: text.bodySmall?.copyWith(color: AppColors.inkMuted),
+                  ),
+                  const SizedBox(height: AppSpacing.sm),
+                  OutlinedButton(
+                    onPressed: store.refresh,
+                    child: const Text('Retry'),
+                  ),
+                ],
+              ),
+            )
+          else if (results.isEmpty)
             Container(
               padding: const EdgeInsets.all(AppSpacing.lg),
               decoration: BoxDecoration(
@@ -123,9 +169,7 @@ class _ResidencySearchScreenState extends State<ResidencySearchScreen> {
             icon: const Icon(Icons.description_outlined, size: 18),
             label: const Text('Export Results'),
           ),
-        ],
-      ),
-    );
+        ]);
   }
 }
 
@@ -166,7 +210,7 @@ class _ResidentCard extends StatelessWidget {
                         color: AppColors.ink, fontWeight: FontWeight.w700)),
                 const SizedBox(height: 2),
                 Text(
-                  '${record.age} yrs · ${record.purok}'
+                  '${record.ageLabel} yrs · ${record.purok}'
                   '${record.category.isNotEmpty ? ' · ${record.category}' : ''}',
                   style: text.bodySmall?.copyWith(color: AppColors.inkMuted),
                 ),
@@ -175,9 +219,8 @@ class _ResidentCard extends StatelessWidget {
           ),
           StatusBadge(
             record.status,
-            kind: record.status == 'Active'
-                ? BadgeKind.success
-                : BadgeKind.gray,
+            kind:
+                record.status == 'Active' ? BadgeKind.success : BadgeKind.gray,
           ),
         ],
       ),
