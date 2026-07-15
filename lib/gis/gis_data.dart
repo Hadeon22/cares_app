@@ -1,0 +1,217 @@
+import 'dart:convert';
+import 'dart:math' as math;
+import 'dart:ui';
+
+import 'package:flutter/services.dart' show rootBundle;
+
+/// Loads and projects the barangay GeoJSON layers — the same five files
+/// the web system renders (js/gis-map.js + data/*.geojson), bundled as
+/// Flutter assets. Everything is parsed once and cached.
+///
+/// Coordinates are projected to "map units": an equirectangular fit of
+/// the barangay boundary into a canvas 1000 units wide (latitude scaled
+/// by cos(midLat) so shapes keep their real-world aspect), matching the
+/// web map's local viewBox approach.
+class GisMapData {
+  GisMapData._({
+    required this.size,
+    required this.boundary,
+    required this.boundaryPoints,
+    required this.buildings,
+    required this.buildingsOutside,
+    required this.roadsByType,
+    required this.water,
+    required this.vegetationByKind,
+    required this.vegetationOutside,
+  });
+
+  /// Canvas size in map units (width fixed at 1000).
+  final Size size;
+
+  final Path boundary;
+
+  /// Boundary ring in map units — used for hit tests.
+  final List<Offset> boundaryPoints;
+
+  final Path buildings;
+  final Path buildingsOutside; // context past the border, drawn faded
+  final Map<String, Path> roadsByType; // major / local / service
+  final Path water;
+  final Map<String, Path> vegetationByKind;
+  final Path vegetationOutside;
+
+  static Future<GisMapData>? _future;
+
+  /// Cached loader — safe to call from multiple screens.
+  static Future<GisMapData> load() => _future ??= _load();
+
+  static Future<GisMapData> _load() async {
+    const prefix = 'assets/gis';
+    final boundaryJson = jsonDecode(
+        await rootBundle.loadString('$prefix/conde-labak-boundary.geojson'));
+    final buildingsJson = jsonDecode(
+        await rootBundle.loadString('$prefix/conde-labak-buildings.geojson'));
+    final roadsJson = jsonDecode(
+        await rootBundle.loadString('$prefix/conde-labak-roads.geojson'));
+    final waterJson = jsonDecode(
+        await rootBundle.loadString('$prefix/conde-labak-water.geojson'));
+    final vegetationJson = jsonDecode(
+        await rootBundle.loadString('$prefix/conde-labak-vegetation.geojson'));
+
+    // ── Projection from the boundary's bounding box ──────────
+    final boundaryRingLonLat =
+        _firstPolygonRing(boundaryJson['features'][0]['geometry']);
+    var minLon = double.infinity, maxLon = -double.infinity;
+    var minLat = double.infinity, maxLat = -double.infinity;
+    for (final p in boundaryRingLonLat) {
+      minLon = math.min(minLon, p[0]);
+      maxLon = math.max(maxLon, p[0]);
+      minLat = math.min(minLat, p[1]);
+      maxLat = math.max(maxLat, p[1]);
+    }
+    // Small margin so context just past the border stays visible.
+    final lonPad = (maxLon - minLon) * 0.06;
+    final latPad = (maxLat - minLat) * 0.06;
+    minLon -= lonPad;
+    maxLon += lonPad;
+    minLat -= latPad;
+    maxLat += latPad;
+
+    final cosLat = math.cos((minLat + maxLat) / 2 * math.pi / 180);
+    final scale = 1000 / ((maxLon - minLon) * cosLat);
+    final size =
+        Size(1000, (maxLat - minLat) * scale);
+
+    // Takes `dynamic` so it can map directly over decoded JSON lists.
+    Offset project(dynamic lonLat) => Offset(
+          ((lonLat[0] as num) - minLon) * cosLat * scale,
+          (maxLat - (lonLat[1] as num)) * scale,
+        );
+
+    // ── Boundary ─────────────────────────────────────────────
+    final boundaryPoints =
+        boundaryRingLonLat.map<Offset>(project).toList();
+    final boundaryPath = Path()..addPolygon(boundaryPoints, true);
+
+    bool insideBoundary(Offset p) =>
+        _pointInPolygon(p, boundaryPoints);
+
+    // ── Buildings (split inside / outside the border) ────────
+    final buildings = Path();
+    final buildingsOutside = Path();
+    for (final f in buildingsJson['features'] as List) {
+      final ring = _firstPolygonRing(f['geometry']);
+      if (ring.isEmpty) continue;
+      final pts = ring.map<Offset>(project).toList();
+      (insideBoundary(_centroid(pts)) ? buildings : buildingsOutside)
+          .addPolygon(pts, true);
+    }
+
+    // ── Roads, classified like gisRoadTypeForHighway() ───────
+    final roadsByType = {
+      'major': Path(),
+      'local': Path(),
+      'service': Path(),
+    };
+    const majorHighways = {
+      'tertiary', 'secondary', 'primary', 'trunk', 'motorway'
+    };
+    for (final f in roadsJson['features'] as List) {
+      final geom = f['geometry'];
+      if (geom['type'] != 'LineString') continue;
+      final highway = (f['properties']?['highway'] ?? '') as String;
+      final type = majorHighways.contains(highway)
+          ? 'major'
+          : highway == 'service'
+              ? 'service'
+              : 'local';
+      _addPolyline(
+          roadsByType[type]!, (geom['coordinates'] as List), project);
+    }
+
+    // ── Water ────────────────────────────────────────────────
+    final water = Path();
+    for (final f in waterJson['features'] as List) {
+      final geom = f['geometry'];
+      if (geom['type'] == 'LineString') {
+        _addPolyline(water, geom['coordinates'] as List, project);
+      }
+    }
+
+    // ── Vegetation by kind (split inside / outside) ──────────
+    final vegetationByKind = <String, Path>{};
+    final vegetationOutside = Path();
+    for (final f in vegetationJson['features'] as List) {
+      final ring = _firstPolygonRing(f['geometry']);
+      if (ring.isEmpty) continue;
+      final pts = ring.map<Offset>(project).toList();
+      if (insideBoundary(_centroid(pts))) {
+        final kind = (f['properties']?['kind'] ?? 'wood') as String;
+        (vegetationByKind[kind] ??= Path()).addPolygon(pts, true);
+      } else {
+        vegetationOutside.addPolygon(pts, true);
+      }
+    }
+
+    return GisMapData._(
+      size: size,
+      boundary: boundaryPath,
+      boundaryPoints: boundaryPoints,
+      buildings: buildings,
+      buildingsOutside: buildingsOutside,
+      roadsByType: roadsByType,
+      water: water,
+      vegetationByKind: vegetationByKind,
+      vegetationOutside: vegetationOutside,
+    );
+  }
+
+  // ── GeoJSON helpers ────────────────────────────────────────
+
+  /// Outer ring of a Polygon (or first polygon of a MultiPolygon).
+  static List<dynamic> _firstPolygonRing(Map<String, dynamic> geometry) {
+    final coords = geometry['coordinates'] as List;
+    switch (geometry['type']) {
+      case 'Polygon':
+        return coords[0] as List;
+      case 'MultiPolygon':
+        return coords[0][0] as List;
+      default:
+        return const [];
+    }
+  }
+
+  static void _addPolyline(
+      Path path, List coords, Offset Function(dynamic) project) {
+    if (coords.length < 2) return;
+    final first = project(coords[0]);
+    path.moveTo(first.dx, first.dy);
+    for (var i = 1; i < coords.length; i++) {
+      final p = project(coords[i]);
+      path.lineTo(p.dx, p.dy);
+    }
+  }
+
+  static Offset _centroid(List<Offset> pts) {
+    var x = 0.0, y = 0.0;
+    for (final p in pts) {
+      x += p.dx;
+      y += p.dy;
+    }
+    return Offset(x / pts.length, y / pts.length);
+  }
+
+  /// Ray-casting point-in-polygon test.
+  static bool _pointInPolygon(Offset p, List<Offset> ring) {
+    var inside = false;
+    for (var i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+      final a = ring[i], b = ring[j];
+      if ((a.dy > p.dy) != (b.dy > p.dy) &&
+          p.dx <
+              (b.dx - a.dx) * (p.dy - a.dy) / (b.dy - a.dy) + a.dx) {
+        inside = !inside;
+      }
+    }
+    return inside;
+  }
+}

@@ -1,0 +1,34 @@
+name: cares_app
+description: >
+  C.A.R.E.S. — Conde Labac Residents System.
+  The official mobile service platform of Barangay Conde Labac, Batangas City.
+publish_to: "none"
+version: 1.0.0+1
+
+environment:
+  sdk: ">=3.0.0 <4.0.0"
+  flutter: ">=3.10.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  google_fonts: ^6.2.1
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+
+flutter:
+  uses-material-design: true
+
+  assets:
+    - assets/images/
+    - assets/gis/
+
+# ─────────────────────────────────────────────────────────────
+# NOTE: Place the following images inside assets/images/
+#   barangay_hall.jpg   → photo of the Barangay Hall (from web hero)
+#   barangay_seal.png   → official seal of Barangay Conde Labac
+# The UI degrades gracefully (branded placeholders) if missing.
+# ─────────────────────────────────────────────────────────────
