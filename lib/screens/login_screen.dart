@@ -23,6 +23,7 @@ class _LoginScreenState extends State<LoginScreen> {
   final _userCtrl = TextEditingController();
   final _passCtrl = TextEditingController();
   bool _busy = false;
+  bool _remember = false;
 
   @override
   void dispose() {
@@ -41,7 +42,8 @@ class _LoginScreenState extends State<LoginScreen> {
     }
     setState(() => _busy = true);
     try {
-      await AppSession.instance.signIn(email, _passCtrl.text);
+      await AppSession.instance
+          .signIn(email, _passCtrl.text, remember: _remember);
       if (!mounted) return;
       // main.dart listens to the session and swaps in the right shell.
       Navigator.of(context).popUntil((r) => r.isFirst);
@@ -125,7 +127,27 @@ class _LoginScreenState extends State<LoginScreen> {
                         decoration: const InputDecoration(hintText: '••••••••'),
                         onSubmitted: (_) => _signIn(),
                       ),
-                      const SizedBox(height: AppSpacing.lg),
+                      const SizedBox(height: AppSpacing.sm),
+
+                      // Keep the session on this device so reopening the
+                      // app skips the sign-in screen.
+                      CheckboxListTile(
+                        value: _remember,
+                        onChanged: (v) =>
+                            setState(() => _remember = v ?? false),
+                        controlAffinity: ListTileControlAffinity.leading,
+                        contentPadding: EdgeInsets.zero,
+                        dense: true,
+                        activeColor: AppColors.navy,
+                        title: Text(
+                          'Keep me signed in',
+                          style: text.bodySmall?.copyWith(
+                            color: AppColors.ink,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: AppSpacing.sm),
 
                       FilledButton(
                         onPressed: _busy ? null : _signIn,

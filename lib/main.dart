@@ -1,12 +1,27 @@
 import 'package:flutter/material.dart';
 
 import 'core/theme/app_theme.dart';
+import 'data/offline_queue.dart';
 import 'data/session.dart';
+import 'data/stores.dart';
 import 'screens/main_shell.dart';
 import 'screens/mis/mis_shell.dart';
 
-void main() {
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  // Restore a remembered session ("keep me signed in") and any submissions
+  // queued while offline before the first frame.
+  await AppSession.instance.restore();
+  await OfflineQueue.instance.load();
+  // After a queue sync, re-pull the stores so the real server rows (with
+  // their CERT-/INC- numbers) replace the queued placeholders.
+  OfflineQueue.instance.onSynced = () {
+    if (CertificateStore.instance.loaded) CertificateStore.instance.refresh();
+    if (IncidentStore.instance.loaded) IncidentStore.instance.refresh();
+  };
   runApp(const CaresApp());
+  // Try to push anything still queued from the last run (no-op if offline).
+  OfflineQueue.instance.flush();
 }
 
 /// C.A.R.E.S. — Conde Labac Residents System

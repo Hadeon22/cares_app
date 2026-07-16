@@ -21,9 +21,13 @@ class CertificatesPage extends StatelessWidget {
     'rejected': BadgeKind.danger,
   };
 
-  Future<void> _approve(BuildContext context, CertificateRequest r) async {
+  /// Move a request to [status] — used for Approve, Reject and Undo
+  /// (undo = back to pending; the server allows it and re-notifies the
+  /// requester that their request is under review again).
+  Future<void> _setStatus(
+      BuildContext context, CertificateRequest r, String status) async {
     try {
-      await CertificateStore.instance.setStatus(r, 'approved',
+      await CertificateStore.instance.setStatus(r, status,
           accountId: AppSession.instance.accountId);
     } catch (e) {
       if (context.mounted) {
@@ -31,12 +35,81 @@ class CertificatesPage extends StatelessWidget {
       }
       return;
     }
+    const actions = {
+      'approved': 'CERT_APPROVE',
+      'rejected': 'CERT_REJECT',
+      'pending': 'CERT_UNDO',
+      'issued': 'CERT_ISSUE',
+    };
     AuditLog.instance.log(
-      'CERT_APPROVE',
-      '${r.typeLabel} (${r.requestNo}) approved for ${r.applicant}',
+      actions[status] ?? 'CERT_UPDATE',
+      '${r.typeLabel} (${r.requestNo}) → $status for ${r.applicant}',
       category: AuditCategory.certificate,
     );
-    if (context.mounted) showAppToast(context, '${r.requestNo} approved!');
+    if (context.mounted) {
+      showAppToast(
+          context,
+          status == 'pending'
+              ? '${r.requestNo} moved back to pending.'
+              : '${r.requestNo} $status!');
+    }
+  }
+
+  /// Send an in-app message to the requester — lands in their notification
+  /// bell (only possible when the request is linked to a resident account).
+  Future<void> _messageRequester(
+      BuildContext context, CertificateRequest r) async {
+    final ctrl = TextEditingController();
+    final message = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Message ${r.applicant.split(',').first}'),
+        content: TextField(
+          controller: ctrl,
+          autofocus: true,
+          maxLines: 4,
+          decoration: InputDecoration(
+            hintText: 'e.g. Please bring a valid ID when picking up '
+                'your ${r.typeLabel}.',
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cancel'),
+          ),
+          FilledButton.icon(
+            onPressed: () =>
+                Navigator.of(context).pop(ctrl.text.trim()),
+            icon: const Icon(Icons.send, size: 16),
+            label: const Text('Send'),
+          ),
+        ],
+      ),
+    );
+    if (message == null || message.isEmpty || !context.mounted) return;
+    try {
+      await NotificationStore.send(
+        residentId: r.residentId,
+        title: 'Message from the Barangay Office',
+        body: message,
+        ref: r.requestNo,
+      );
+    } catch (e) {
+      if (context.mounted) {
+        showAppToast(context, e.toString(), icon: Icons.error_outline);
+      }
+      return;
+    }
+    AuditLog.instance.log(
+      'CERT_MESSAGE',
+      'Message sent to ${r.applicant} re ${r.requestNo}',
+      category: AuditCategory.certificate,
+    );
+    if (context.mounted) {
+      showAppToast(context, 'Message sent to ${r.applicant.split(',').first}',
+          icon: Icons.mark_email_read_outlined);
+    }
   }
 
   @override
@@ -148,15 +221,13 @@ class CertificatesPage extends StatelessWidget {
                                                   color: AppColors.inkMuted)),
                                         ],
                                         const SizedBox(height: 6),
-                                        Row(
+                                        Wrap(
+                                          spacing: 4,
+                                          runSpacing: 4,
+                                          crossAxisAlignment:
+                                              WrapCrossAlignment.center,
                                           children: [
-                                            TextButton(
-                                              onPressed: () => showAppToast(
-                                                  context,
-                                                  'Viewing ${r.requestNo}'),
-                                              child: const Text('View'),
-                                            ),
-                                            if (r.status == 'pending')
+                                            if (r.status == 'pending') ...[
                                               FilledButton(
                                                 style: FilledButton.styleFrom(
                                                   padding: const EdgeInsets
@@ -164,9 +235,36 @@ class CertificatesPage extends StatelessWidget {
                                                       horizontal: AppSpacing.md,
                                                       vertical: 8),
                                                 ),
-                                                onPressed: () =>
-                                                    _approve(context, r),
+                                                onPressed: () => _setStatus(
+                                                    context, r, 'approved'),
                                                 child: const Text('Approve'),
+                                              ),
+                                              TextButton(
+                                                style: TextButton.styleFrom(
+                                                    foregroundColor:
+                                                        AppColors.flagRed),
+                                                onPressed: () => _setStatus(
+                                                    context, r, 'rejected'),
+                                                child: const Text('Reject'),
+                                              ),
+                                            ] else if (r.status == 'approved' ||
+                                                r.status == 'rejected')
+                                              TextButton.icon(
+                                                onPressed: () => _setStatus(
+                                                    context, r, 'pending'),
+                                                icon: const Icon(Icons.undo,
+                                                    size: 16),
+                                                label: const Text('Undo'),
+                                              ),
+                                            if (r.residentId != null)
+                                              TextButton.icon(
+                                                onPressed: () =>
+                                                    _messageRequester(
+                                                        context, r),
+                                                icon: const Icon(
+                                                    Icons.mail_outline,
+                                                    size: 16),
+                                                label: const Text('Message'),
                                               ),
                                           ],
                                         ),

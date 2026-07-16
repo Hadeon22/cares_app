@@ -5,6 +5,7 @@ import '../../core/constants/app_constants.dart';
 import '../../data/stores.dart';
 import '../../widgets/app_toast.dart';
 import '../../widgets/form_widgets.dart';
+import '../../widgets/resident_detail.dart';
 import 'mis_widgets.dart';
 
 /// Barangay Residency module (js/pages/residency.js) — KPIs + the
@@ -155,8 +156,17 @@ class _ResidencyPageState extends State<ResidencyPage> {
                           ),
                         ),
                         TextButton(
-                          onPressed: () => showAppToast(context,
-                              'Viewing ${r.name.split(',').first}'),
+                          onPressed: r.id == null
+                              ? null
+                              : () {
+                                  showResidentDetailSheet(context, r.id!);
+                                  AuditLog.instance.log(
+                                    'RESIDENT_VIEW',
+                                    'Viewed resident profile: ${r.name} '
+                                        '(#${r.id})',
+                                    category: AuditCategory.system,
+                                  );
+                                },
                           child: const Text('View'),
                         ),
                       ],

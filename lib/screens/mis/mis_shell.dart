@@ -1,12 +1,18 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_constants.dart';
+import '../../data/api_client.dart';
 import '../../data/session.dart';
+import '../../data/stores.dart';
 import '../../widgets/app_toast.dart';
 import '../../widgets/common.dart';
+import '../../widgets/offline_banner.dart';
 import '../gis_map_screen.dart';
 import '../main_shell.dart';
+import '../profile/notifications_screen.dart';
 import 'accounts_page.dart';
 import 'analytics_page.dart';
 import 'archive_page.dart';
@@ -68,8 +74,29 @@ class MisShell extends StatefulWidget {
 
 class _MisShellState extends State<MisShell> {
   String _module = 'dashboard';
+  Timer? _notifTimer;
 
   _MisModule get _current => _modules.firstWhere((m) => m.key == _module);
+
+  @override
+  void initState() {
+    super.initState();
+    // Same polling as the portal shell: staff get request updates and
+    // messages in their bell without a manual refresh.
+    NotificationStore.instance.ensureLoaded();
+    _notifTimer = Timer.periodic(const Duration(seconds: 60), (_) {
+      if (AppSession.instance.isSignedIn &&
+          !ApiClient.instance.offline.value) {
+        NotificationStore.instance.refresh();
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _notifTimer?.cancel();
+    super.dispose();
+  }
 
   void _navigate(String key) {
     final session = AppSession.instance;
@@ -145,15 +172,25 @@ class _MisShellState extends State<MisShell> {
           ],
         ),
         actions: [
-          IconButton(
-            tooltip: 'Notifications',
-            onPressed: () => showAppToast(context, '3 new notifications',
-                icon: Icons.notifications_outlined),
-            icon: const Badge(
-              smallSize: 7,
-              backgroundColor: AppColors.gold,
-              child: Icon(Icons.notifications_outlined),
-            ),
+          AnimatedBuilder(
+            animation: NotificationStore.instance,
+            builder: (context, _) {
+              final unread = NotificationStore.instance.unreadCount;
+              return IconButton(
+                tooltip: 'Notifications',
+                onPressed: () => Navigator.of(context).push(
+                  MaterialPageRoute(
+                      builder: (_) => const NotificationsScreen()),
+                ),
+                icon: Badge(
+                  isLabelVisible: unread > 0,
+                  label: Text('$unread'),
+                  backgroundColor: AppColors.gold,
+                  textColor: AppColors.navyDeep,
+                  child: const Icon(Icons.notifications_outlined),
+                ),
+              );
+            },
           ),
           Padding(
             padding: const EdgeInsets.only(right: AppSpacing.sm),
@@ -233,9 +270,17 @@ class _MisShellState extends State<MisShell> {
           _openPortal(context);
         },
       ),
-      body: AnimatedSwitcher(
-        duration: AppDurations.medium,
-        child: KeyedSubtree(key: ValueKey(_module), child: _buildPage()),
+      body: Column(
+        children: [
+          const OfflineBanner(),
+          Expanded(
+            child: AnimatedSwitcher(
+              duration: AppDurations.medium,
+              child:
+                  KeyedSubtree(key: ValueKey(_module), child: _buildPage()),
+            ),
+          ),
+        ],
       ),
       // Same bottom bar as the portal, with MIS active — tapping a
       // portal tab opens the landing pages on top of the MIS.

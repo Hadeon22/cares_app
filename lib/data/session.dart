@@ -1,6 +1,11 @@
+import 'dart:async' show unawaited;
+import 'dart:convert';
+
 import 'package:flutter/foundation.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'api_client.dart';
+import 'resident_profile.dart';
 import 'stores.dart';
 
 /// User roles mirrored from the web system (js/shell.js).
@@ -43,6 +48,7 @@ class AppSession extends ChangeNotifier {
     AuditLog.instance.currentRole =
         () => _role?.label ?? 'Visitor';
     AuditLog.instance.currentAccountId = () => _accountId;
+    NotificationStore.instance.currentAccountId = () => _accountId;
   }
   static final AppSession instance = AppSession._();
 
@@ -102,9 +108,14 @@ class AppSession extends ChangeNotifier {
     return '$first$last'.toUpperCase();
   }
 
+  static const _prefsKey = 'cares.session';
+
   /// Real login against the shared PostgreSQL accounts table.
   /// Throws [ApiException] with a user-showable message on failure.
-  Future<void> signIn(String email, String password) async {
+  /// With [remember] the session is saved locally, so reopening the app
+  /// signs the account back in without asking for the password again.
+  Future<void> signIn(String email, String password,
+      {bool remember = false}) async {
     final res = await ApiClient.instance.post('/api/auth/login', {
       'username': email.trim(),
       'password': password,
@@ -118,12 +129,62 @@ class AppSession extends ChangeNotifier {
     _accountId = res['account_id'] as int?;
     _residentId = res['resident_id'] as int?;
 
+    if (remember) unawaited(_persist());
+
+    // Warm the offline cache with the resident's own record so "My
+    // Information" and the certificate auto-fill work without internet.
+    final rid = _residentId;
+    if (rid != null) {
+      unawaited(() async {
+        try {
+          await ResidentProfile.fetch(rid);
+        } catch (_) {}
+      }());
+    }
+
     AuditLog.instance.log(
       'LOGIN',
       '$_displayName signed in as $_serverRole ($_user)',
       category: AuditCategory.auth,
     );
     notifyListeners();
+  }
+
+  Future<void> _persist() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(
+          _prefsKey,
+          jsonEncode({
+            'role': _serverRole,
+            'name': _displayName,
+            'user': _user,
+            'account_id': _accountId,
+            'resident_id': _residentId,
+          }));
+    } catch (_) {
+      /* best-effort — worst case the user signs in again next launch */
+    }
+  }
+
+  /// Restore a remembered session at app launch (before runApp).
+  Future<void> restore() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString(_prefsKey);
+      if (raw == null) return;
+      final j = jsonDecode(raw) as Map<String, dynamic>;
+      _serverRole = (j['role'] as String?) ?? 'Resident';
+      _role = _mapRole(_serverRole);
+      _displayName = (j['name'] as String?) ?? '';
+      _initials = _deriveInitials(_displayName);
+      _user = (j['user'] as String?) ?? '';
+      _accountId = j['account_id'] as int?;
+      _residentId = j['resident_id'] as int?;
+      notifyListeners();
+    } catch (_) {
+      /* unreadable session — start signed out */
+    }
   }
 
   /// Offline sign-in for widget tests — sets session state without the API.
@@ -143,6 +204,15 @@ class AppSession extends ChangeNotifier {
       '${_displayName.isEmpty ? "User" : _displayName} signed out',
       category: AuditCategory.auth,
     );
+    // Forget the remembered session and this resident's cached record.
+    final rid = _residentId;
+    unawaited(() async {
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.remove(_prefsKey);
+        if (rid != null) await prefs.remove('cares.profile.$rid');
+      } catch (_) {}
+    }());
     _role = null;
     _serverRole = '';
     _displayName = '';
@@ -150,6 +220,7 @@ class AppSession extends ChangeNotifier {
     _user = '';
     _accountId = null;
     _residentId = null;
+    NotificationStore.instance.reset();
     notifyListeners();
   }
 }

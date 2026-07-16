@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart' show ValueNotifier;
 import 'package:http/http.dart' as http;
 
 /// ─────────────────────────────────────────────────────────────
@@ -37,6 +38,20 @@ class ApiClient {
   static final ApiClient instance = ApiClient._();
 
   final http.Client _http = http.Client();
+
+  /// Flips true whenever a request can't reach the server and back to false
+  /// on the first response that gets through. The shell shows the offline
+  /// banner from this, and the offline queue listens to it to auto-sync.
+  final ValueNotifier<bool> offline = ValueNotifier<bool>(false);
+
+  /// Cheap reachability probe — any response (even an error status) proves
+  /// the server is reachable and clears [offline].
+  Future<bool> ping() async {
+    try {
+      await get('/api/health');
+    } catch (_) {}
+    return !offline.value;
+  }
 
   String get baseUrl =>
       _apiBaseOverride.isNotEmpty ? _apiBaseOverride : kPermanentApiBase;
@@ -77,9 +92,12 @@ class ApiClient {
     } on ApiException {
       rethrow;
     } catch (_) {
+      offline.value = true;
       throw ApiException(
           0, 'Cannot reach the barangay server. Check your connection.');
     }
+    // Got any HTTP response at all → the server is reachable.
+    offline.value = false;
 
     if (res.statusCode < 200 || res.statusCode >= 300) {
       String msg = '${res.statusCode} ${res.reasonPhrase ?? ''}'.trim();

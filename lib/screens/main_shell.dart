@@ -1,12 +1,18 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../core/constants/app_colors.dart';
 import '../core/constants/app_constants.dart';
+import '../data/api_client.dart';
 import '../data/session.dart';
+import '../data/stores.dart';
 import '../widgets/common.dart';
+import '../widgets/offline_banner.dart';
 import 'gis_map_screen.dart';
 import 'home_screen.dart';
 import 'login_screen.dart';
+import 'profile/notifications_screen.dart';
 import 'profile_screen.dart';
 import 'services_screen.dart';
 
@@ -36,18 +42,41 @@ class _MainShellState extends State<MainShell> {
     setState(() => _index = index);
   }
 
+  Timer? _notifTimer;
+
   // Rebuild when the session changes (sign in / sign out) so the
   // AppBar actions and Home welcome reflect the current user.
-  void _onSessionChanged() => setState(() {});
+  void _onSessionChanged() {
+    setState(() {});
+    _syncNotifications();
+  }
+
+  void _syncNotifications() {
+    if (AppSession.instance.isSignedIn) {
+      NotificationStore.instance.refresh();
+      // Poll so request updates & messages land without a manual refresh.
+      _notifTimer ??= Timer.periodic(const Duration(seconds: 60), (_) {
+        if (AppSession.instance.isSignedIn &&
+            !ApiClient.instance.offline.value) {
+          NotificationStore.instance.refresh();
+        }
+      });
+    } else {
+      _notifTimer?.cancel();
+      _notifTimer = null;
+    }
+  }
 
   @override
   void initState() {
     super.initState();
     AppSession.instance.addListener(_onSessionChanged);
+    _syncNotifications();
   }
 
   @override
   void dispose() {
+    _notifTimer?.cancel();
     AppSession.instance.removeListener(_onSessionChanged);
     super.dispose();
   }
@@ -106,14 +135,25 @@ class _MainShellState extends State<MainShell> {
         ),
         actions: [
           if (session.isSignedIn) ...[
-            IconButton(
-              tooltip: 'Notifications',
-              onPressed: () {},
-              icon: const Badge(
-                smallSize: 7,
-                backgroundColor: AppColors.gold,
-                child: Icon(Icons.notifications_outlined),
-              ),
+            AnimatedBuilder(
+              animation: NotificationStore.instance,
+              builder: (context, _) {
+                final unread = NotificationStore.instance.unreadCount;
+                return IconButton(
+                  tooltip: 'Notifications',
+                  onPressed: () => Navigator.of(context).push(
+                    MaterialPageRoute(
+                        builder: (_) => const NotificationsScreen()),
+                  ),
+                  icon: Badge(
+                    isLabelVisible: unread > 0,
+                    label: Text('$unread'),
+                    backgroundColor: AppColors.gold,
+                    textColor: AppColors.navyDeep,
+                    child: const Icon(Icons.notifications_outlined),
+                  ),
+                );
+              },
             ),
             Padding(
               padding: const EdgeInsets.only(right: AppSpacing.md),
@@ -154,24 +194,31 @@ class _MainShellState extends State<MainShell> {
             ),
         ],
       ),
-      body: AnimatedSwitcher(
-        duration: AppDurations.medium,
-        switchInCurve: Curves.easeOutCubic,
-        switchOutCurve: Curves.easeInCubic,
-        transitionBuilder: (child, animation) => FadeTransition(
-          opacity: animation,
-          child: SlideTransition(
-            position: Tween<Offset>(
-              begin: const Offset(0, 0.015),
-              end: Offset.zero,
-            ).animate(animation),
-            child: child,
+      body: Column(
+        children: [
+          const OfflineBanner(),
+          Expanded(
+            child: AnimatedSwitcher(
+              duration: AppDurations.medium,
+              switchInCurve: Curves.easeOutCubic,
+              switchOutCurve: Curves.easeInCubic,
+              transitionBuilder: (child, animation) => FadeTransition(
+                opacity: animation,
+                child: SlideTransition(
+                  position: Tween<Offset>(
+                    begin: const Offset(0, 0.015),
+                    end: Offset.zero,
+                  ).animate(animation),
+                  child: child,
+                ),
+              ),
+              child: KeyedSubtree(
+                key: ValueKey(_index),
+                child: screens[_index],
+              ),
+            ),
           ),
-        ),
-        child: KeyedSubtree(
-          key: ValueKey(_index),
-          child: screens[_index],
-        ),
+        ],
       ),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _index,

@@ -5,6 +5,11 @@ import 'package:flutter/foundation.dart';
 
 import '../gis/gis_data.dart';
 import 'api_client.dart';
+import 'offline_queue.dart';
+
+/// Sentinel reference number for submissions parked in the [OfflineQueue] —
+/// screens show a friendly "will sync later" message when they see it.
+const String kPendingSyncRef = 'PENDING-SYNC';
 
 /// ─────────────────────────────────────────────────────────────
 /// Shared app stores, backed by the Conde Labac MIS API (the same
@@ -196,6 +201,7 @@ class CertificateRequest {
     required this.createdAt,
     this.purpose = '',
     this.status = 'pending',
+    this.residentId,
   });
 
   factory CertificateRequest.fromJson(Map<String, dynamic> j) =>
@@ -206,6 +212,7 @@ class CertificateRequest {
         typeKey: (j['type'] ?? 'barangay-clearance') as String,
         purpose: (j['purpose'] ?? '') as String? ?? '',
         status: (j['status'] ?? 'pending') as String,
+        residentId: j['resident_id'] as int?,
         createdAt: _parseTs(j['created_at']),
       );
 
@@ -215,6 +222,9 @@ class CertificateRequest {
   final String typeKey;
   final String purpose;
   String status; // pending | approved | issued | rejected
+
+  /// Who filed it — links the row back to a resident's account ("My Requests").
+  final int? residentId;
   final DateTime createdAt;
 
   String get typeLabel => certificateTypeByKey(typeKey).name;
@@ -245,6 +255,9 @@ class CertificateStore extends ChangeNotifier with ApiStore {
   }
 
   /// File a new request; returns the created row (with its CERT-… number).
+  /// When the server is unreachable the request is parked in the
+  /// [OfflineQueue] instead and a [kPendingSyncRef] placeholder comes back —
+  /// it will be submitted automatically once the app is back online.
   Future<CertificateRequest> file({
     required String typeKey,
     required String applicantName,
@@ -252,19 +265,38 @@ class CertificateStore extends ChangeNotifier with ApiStore {
     int? residentId,
     int? accountId,
   }) async {
-    final res = await ApiClient.instance.post('/api/certificates', {
+    final body = {
       'type': typeKey,
       'applicant_name': applicantName,
       if (purpose.isNotEmpty) 'purpose': purpose,
       if (residentId != null) 'resident_id': residentId,
       if (accountId != null) 'account_id': accountId,
-    }) as Map<String, dynamic>;
+    };
+    final Map<String, dynamic> res;
+    try {
+      res = await ApiClient.instance.post('/api/certificates', body)
+          as Map<String, dynamic>;
+    } on ApiException catch (e) {
+      if (e.statusCode != 0) rethrow; // real server rejection
+      await OfflineQueue.instance.enqueue('certificate', '/api/certificates',
+          body);
+      return CertificateRequest(
+        id: -1,
+        requestNo: kPendingSyncRef,
+        applicant: applicantName,
+        typeKey: typeKey,
+        purpose: purpose,
+        residentId: residentId,
+        createdAt: DateTime.now(),
+      );
+    }
     final req = CertificateRequest(
       id: res['id'] as int,
       requestNo: res['request_no'] as String,
       applicant: applicantName,
       typeKey: typeKey,
       purpose: purpose,
+      residentId: residentId,
       createdAt: _parseTs(res['created_at']),
     );
     _requests.insert(0, req);
@@ -476,6 +508,7 @@ class FeedbackEntry {
     this.name = 'Anonymous',
     this.contact = '',
     this.status = 'new',
+    this.accountId,
   });
 
   factory FeedbackEntry.fromJson(Map<String, dynamic> j) => FeedbackEntry(
@@ -487,6 +520,7 @@ class FeedbackEntry {
         name: (j['name'] ?? 'Anonymous') as String,
         contact: (j['contact'] ?? '') as String? ?? '',
         status: (j['status'] ?? 'new') as String,
+        accountId: j['account_id'] as int?,
       );
 
   final int? id;
@@ -497,6 +531,9 @@ class FeedbackEntry {
   final String name;
   final String contact;
   final String status; // new | reviewed | archived
+
+  /// account_id of the signed-in submitter (null = anonymous/visitor).
+  final int? accountId;
 }
 
 class FeedbackStore extends ChangeNotifier with ApiStore {
@@ -546,6 +583,7 @@ class FeedbackStore extends ChangeNotifier with ApiStore {
         comment: comment,
         name: name.trim().isEmpty ? 'Anonymous' : name.trim(),
         contact: contact,
+        accountId: accountId,
       ),
     );
     notifyListeners();
@@ -567,6 +605,7 @@ class IncidentReport {
     this.location = '',
     this.mapPoint,
     this.resolved = false,
+    this.complainantId,
   });
 
   final int? id;
@@ -579,6 +618,10 @@ class IncidentReport {
   final String respondent;
   final String witnesses;
   final String location;
+
+  /// resident_id of the complainant — links the report back to the account
+  /// that filed it (Activity History).
+  final int? complainantId;
 
   /// Where the pin was dropped, normalized 0..1 against the GIS map
   /// canvas (converted from the DB's real lat/lng).
@@ -635,6 +678,7 @@ class IncidentStore extends ChangeNotifier with ApiStore {
         respondent: (j['respondent'] ?? '') as String? ?? '',
         witnesses: (j['witnesses'] ?? '') as String? ?? '',
         location: 'Pinned on GIS map',
+        complainantId: j['complainant_id'] as int?,
         mapPoint: (lat != null && lng != null)
             ? gis.normalizedFromLatLng(lat, lng)
             : null,
@@ -661,7 +705,7 @@ class IncidentStore extends ChangeNotifier with ApiStore {
       final gis = await GisMapData.load();
       (lat, lng) = gis.latLngFromNormalized(mapPoint);
     }
-    final res = await ApiClient.instance.post('/api/incidents', {
+    final body = {
       'report_type': typeKey,
       'title': incidentTypeByKey(typeKey).label,
       'narration': narration,
@@ -673,13 +717,36 @@ class IncidentStore extends ChangeNotifier with ApiStore {
       if (lng != null) 'lng': lng,
       if (complainantId != null) 'complainant_id': complainantId,
       if (accountId != null) 'account_id': accountId,
-    }) as Map<String, dynamic>;
+    };
+    final Map<String, dynamic> res;
+    try {
+      res = await ApiClient.instance.post('/api/incidents', body)
+          as Map<String, dynamic>;
+    } on ApiException catch (e) {
+      if (e.statusCode != 0) rethrow;
+      // Offline: park it in the queue; it uploads when connectivity returns.
+      await OfflineQueue.instance.enqueue('incident', '/api/incidents', body);
+      return IncidentReport(
+        caseNo: kPendingSyncRef,
+        typeKey: typeKey,
+        complainant: complainant,
+        complainantId: complainantId,
+        narration: narration,
+        contact: contact,
+        respondent: respondent,
+        witnesses: witnesses,
+        location: location,
+        mapPoint: mapPoint,
+        createdAt: DateTime.now(),
+      );
+    }
 
     final report = IncidentReport(
       id: res['id'] as int?,
       caseNo: res['case_no'] as String,
       typeKey: typeKey,
       complainant: complainant,
+      complainantId: complainantId,
       narration: narration,
       contact: contact,
       respondent: respondent,
@@ -764,6 +831,106 @@ class DashboardStats extends ChangeNotifier with ApiStore {
           in ((j['certificates_by_status'] as Map?) ?? const {}).entries)
         e.key.toString(): (e.value as num?)?.toInt() ?? 0,
     };
+  }
+}
+
+/// ── Notifications (notification table via /api/notifications) ─
+class AppNotification {
+  AppNotification({
+    required this.id,
+    required this.title,
+    required this.body,
+    required this.kind,
+    required this.ref,
+    required this.read,
+    required this.createdAt,
+  });
+
+  factory AppNotification.fromJson(Map<String, dynamic> j) => AppNotification(
+        id: j['id'] as int,
+        title: (j['title'] ?? '') as String,
+        body: (j['body'] ?? '') as String? ?? '',
+        kind: (j['kind'] ?? 'system') as String,
+        ref: (j['ref'] ?? '') as String? ?? '',
+        read: j['is_read'] == true,
+        createdAt: _parseTs(j['created_at']),
+      );
+
+  final int id;
+  final String title;
+  final String body;
+  final String kind; // certificate | message | system
+  final String ref; // e.g. CERT-2026-001
+  bool read;
+  final DateTime createdAt;
+}
+
+/// The signed-in account's notification feed. The bell badge shows
+/// [unreadCount]; opening the Notifications screen marks everything read.
+class NotificationStore extends ChangeNotifier with ApiStore {
+  NotificationStore._();
+  static final NotificationStore instance = NotificationStore._();
+
+  /// Injected by AppSession (same pattern as [AuditLog]) to avoid a
+  /// circular import.
+  int? Function()? currentAccountId;
+
+  final List<AppNotification> _items = [];
+  List<AppNotification> get all => List.unmodifiable(_items);
+  int get unreadCount => _items.where((n) => !n.read).length;
+
+  @override
+  Future<void> fetch() async {
+    final accountId = currentAccountId?.call();
+    if (accountId == null) {
+      _items.clear();
+      return;
+    }
+    final rows = await ApiClient.instance.get('/api/notifications',
+        query: {'account_id': '$accountId', 'limit': '100'}) as List;
+    _items
+      ..clear()
+      ..addAll(
+          rows.map((r) => AppNotification.fromJson(r as Map<String, dynamic>)));
+  }
+
+  Future<void> markAllRead() async {
+    final accountId = currentAccountId?.call();
+    if (accountId == null || unreadCount == 0) return;
+    for (final n in _items) {
+      n.read = true;
+    }
+    notifyListeners();
+    unawaited(ApiClient.instance
+        .post('/api/notifications/read-all', {'account_id': accountId})
+        .catchError((_) => null));
+  }
+
+  /// Sign-out: drop the feed and force a refetch on the next sign-in.
+  void reset() {
+    _items.clear();
+    _loaded = false;
+    notifyListeners();
+  }
+
+  /// Send a notification to another account (staff → requester message).
+  /// Static because the sender doesn't touch the local feed.
+  static Future<void> send({
+    int? accountId,
+    int? residentId,
+    required String title,
+    String body = '',
+    String kind = 'message',
+    String? ref,
+  }) {
+    return ApiClient.instance.post('/api/notifications', {
+      if (accountId != null) 'account_id': accountId,
+      if (residentId != null) 'resident_id': residentId,
+      'title': title,
+      if (body.isNotEmpty) 'body': body,
+      'kind': kind,
+      if (ref != null) 'ref': ref,
+    });
   }
 }
 

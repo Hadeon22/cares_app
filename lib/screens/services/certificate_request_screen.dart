@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_constants.dart';
+import '../../data/resident_profile.dart';
 import '../../data/session.dart';
 import '../../data/stores.dart';
 import '../../widgets/app_toast.dart';
@@ -36,6 +37,40 @@ class _CertificateRequestScreenState extends State<CertificateRequestScreen> {
     Icons.star_outline,
     Icons.family_restroom_outlined,
   ];
+
+  @override
+  void initState() {
+    super.initState();
+    _prefillFromRecord();
+  }
+
+  /// Auto-fill the applicant details from the signed-in resident's record
+  /// (same data the web View-Resident modal shows). Best-effort: the form
+  /// still works untouched when offline or signed in as staff.
+  Future<void> _prefillFromRecord() async {
+    final residentId = AppSession.instance.residentId;
+    if (residentId == null) return;
+    final ResidentProfile r;
+    try {
+      r = await ResidentProfile.fetch(residentId);
+    } catch (_) {
+      return;
+    }
+    if (!mounted) return;
+    setState(() {
+      if (_fname.text.isEmpty) _fname.text = r.firstName;
+      if (_lname.text.isEmpty) _lname.text = r.lastName;
+      _dob ??= r.birthdate;
+      if (_contact.text.isEmpty && (r.contactNo ?? '').isNotEmpty) {
+        _contact.text = r.contactNo!;
+      }
+      // DB purok is "Purok 1"; the dropdown entries are "Purok 1 – Sitio …".
+      if (r.purok != null) {
+        _purok = kPuroks.firstWhere((p) => p.startsWith(r.purok!),
+            orElse: () => _purok);
+      }
+    });
+  }
 
   @override
   void dispose() {
@@ -104,9 +139,17 @@ class _CertificateRequestScreenState extends State<CertificateRequestScreen> {
     );
     if (!mounted) return;
     Navigator.of(context).pop();
-    showAppToast(context,
-        '${_selected.name} request submitted! Ref: ${req.requestNo}',
-        icon: Icons.description_outlined);
+    if (req.requestNo == kPendingSyncRef) {
+      showAppToast(
+          context,
+          "You're offline — request saved and will be submitted "
+          'automatically once you reconnect.',
+          icon: Icons.cloud_upload_outlined);
+    } else {
+      showAppToast(context,
+          '${_selected.name} request submitted! Ref: ${req.requestNo}',
+          icon: Icons.description_outlined);
+    }
   }
 
   String _fmt(DateTime? d) =>

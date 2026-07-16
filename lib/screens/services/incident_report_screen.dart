@@ -108,8 +108,16 @@ class _IncidentReportScreenState extends State<IncidentReportScreen> {
     );
     if (!mounted) return;
     Navigator.of(context).pop();
-    showAppToast(context, 'Report filed — Case No. ${report.caseNo}',
-        icon: Icons.campaign_outlined);
+    if (report.caseNo == kPendingSyncRef) {
+      showAppToast(
+          context,
+          "You're offline — report saved and will be filed automatically "
+          'once you reconnect.',
+          icon: Icons.cloud_upload_outlined);
+    } else {
+      showAppToast(context, 'Report filed — Case No. ${report.caseNo}',
+          icon: Icons.campaign_outlined);
+    }
   }
 
   @override

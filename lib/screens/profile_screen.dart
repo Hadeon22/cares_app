@@ -6,6 +6,10 @@ import '../core/utils/fade_slide.dart';
 import '../data/session.dart';
 import '../widgets/app_toast.dart';
 import 'login_screen.dart';
+import 'profile/activity_history_screen.dart';
+import 'profile/my_info_screen.dart';
+import 'profile/my_requests_screen.dart';
+import 'profile/notifications_screen.dart';
 
 /// Profile tab: identity card + account actions, driven by the active
 /// session (web: nav user pill + dropdown).
@@ -14,12 +18,24 @@ class ProfileScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Listen to the session so signing out swaps to the signed-out view
+    // immediately (not on the next tab switch).
+    return ListenableBuilder(
+      listenable: AppSession.instance,
+      builder: (context, _) => _buildBody(context),
+    );
+  }
+
+  Widget _buildBody(BuildContext context) {
     final text = Theme.of(context).textTheme;
     final session = AppSession.instance;
 
     if (!session.isSignedIn) {
       return _SignedOutView(text: text);
     }
+
+    void push(Widget screen) => Navigator.of(context)
+        .push(MaterialPageRoute(builder: (_) => screen));
 
     return ListView(
       physics: const BouncingScrollPhysics(),
@@ -77,22 +93,34 @@ class ProfileScreen extends StatelessWidget {
           ),
         ),
         const SizedBox(height: AppSpacing.lg),
-        const FadeSlide(
-          delay: Duration(milliseconds: 120),
+        FadeSlide(
+          delay: const Duration(milliseconds: 120),
           child: _ActionGroup(
             children: [
               _ProfileTile(
-                  icon: Icons.receipt_long_outlined,
-                  title: 'My Requests',
-                  subtitle: 'Track certificates & clearances'),
+                icon: Icons.badge_outlined,
+                title: 'My Information',
+                subtitle: 'View your account & barangay record',
+                onTap: () => push(const MyInfoScreen()),
+              ),
               _ProfileTile(
-                  icon: Icons.event_note_outlined,
-                  title: 'My Appointments',
-                  subtitle: 'Upcoming visits to the hall'),
+                icon: Icons.receipt_long_outlined,
+                title: 'My Requests',
+                subtitle: 'Track certificates & clearances',
+                onTap: () => push(const MyRequestsScreen()),
+              ),
               _ProfileTile(
-                  icon: Icons.notifications_outlined,
-                  title: 'Notifications',
-                  subtitle: 'Advisories & request updates'),
+                icon: Icons.history,
+                title: 'Activity History',
+                subtitle: 'Reports filed & feedback given',
+                onTap: () => push(const ActivityHistoryScreen()),
+              ),
+              _ProfileTile(
+                icon: Icons.notifications_outlined,
+                title: 'Notifications',
+                subtitle: 'Advisories & request updates',
+                onTap: () => push(const NotificationsScreen()),
+              ),
             ],
           ),
         ),
