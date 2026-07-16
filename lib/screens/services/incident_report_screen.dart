@@ -220,8 +220,9 @@ class _IncidentReportScreenState extends State<IncidentReportScreen> {
             ),
           const AlertBanner(
             kind: AlertKind.info,
-            child: Text('Your report will be assigned a case number and '
-                'reviewed by a barangay official within 24 hours.'),
+            child: Text('Your report will be reviewed by a barangay official '
+                'within 24 hours. You will receive a phone notification '
+                'with any updates.'),
           ),
           const SizedBox(height: AppSpacing.sm),
           FilledButton.icon(

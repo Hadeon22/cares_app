@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "283849382153",
+    "project_id": "conde-labak-app",
+    "storage_bucket": "conde-labak-app.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:283849382153:android:e21b099492926778fa1bd8",
+        "android_client_info": {
+          "package_name": "ph.gov.condelabac.cares"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDAwx4uiDNcOWH2cVIpqkOIC43w0n_BbKc"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

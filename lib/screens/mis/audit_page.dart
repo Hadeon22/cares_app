@@ -72,8 +72,9 @@ class _AuditPageState extends State<AuditPage> {
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Clear audit logs?'),
-        content:
-            const Text('Clear all audit log entries? This cannot be undone.'),
+        content: const Text(
+            'Clear all audit log entries? This cannot be undone. The wipe '
+            'itself is recorded and stays on the trail for 90 days.'),
         actions: [
           TextButton(
               onPressed: () => Navigator.pop(ctx, false),
@@ -87,8 +88,9 @@ class _AuditPageState extends State<AuditPage> {
     if (confirmed != true || !mounted) return;
     AuditLog.instance.clear();
     // The wipe itself is an auditable event — first entry of the new trail.
+    // AUDIT_CLEAR markers survive later clears and expire after 90 days.
     AuditLog.instance.log(
-      'AUDIT_CLEAR',
+      AuditLog.clearAction,
       'Audit log cleared by administrator',
       level: AuditLevel.critical,
       category: AuditCategory.system,
@@ -162,12 +164,18 @@ class _AuditPageState extends State<AuditPage> {
                       Expanded(
                         child: DropdownButtonFormField<AuditCategory?>(
                           initialValue: _category,
+                          // Long labels ("Resident Concerns", …) must
+                          // ellipsize inside the half-width field instead
+                          // of overflowing it.
+                          isExpanded: true,
                           items: [
                             const DropdownMenuItem(
                                 value: null, child: Text('All Categories')),
                             for (final c in AuditCategory.values)
                               DropdownMenuItem(
-                                  value: c, child: Text(c.label)),
+                                  value: c,
+                                  child: Text(c.label,
+                                      overflow: TextOverflow.ellipsis)),
                           ],
                           onChanged: (v) => setState(() => _category = v),
                         ),
@@ -176,14 +184,17 @@ class _AuditPageState extends State<AuditPage> {
                       Expanded(
                         child: DropdownButtonFormField<AuditLevel?>(
                           initialValue: _level,
+                          isExpanded: true,
                           items: [
                             const DropdownMenuItem(
                                 value: null, child: Text('All Levels')),
                             for (final l in AuditLevel.values)
                               DropdownMenuItem(
                                   value: l,
-                                  child: Text(l.name[0].toUpperCase() +
-                                      l.name.substring(1))),
+                                  child: Text(
+                                      l.name[0].toUpperCase() +
+                                          l.name.substring(1),
+                                      overflow: TextOverflow.ellipsis)),
                           ],
                           onChanged: (v) => setState(() => _level = v),
                         ),

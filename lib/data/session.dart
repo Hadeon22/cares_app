@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'api_client.dart';
+import 'push_service.dart';
 import 'resident_profile.dart';
 import 'stores.dart';
 
@@ -131,6 +132,10 @@ class AppSession extends ChangeNotifier {
 
     if (remember) unawaited(_persist());
 
+    // Register this phone for push under the new account.
+    final acct = _accountId;
+    if (acct != null) unawaited(PushService.instance.registerForAccount(acct));
+
     // Warm the offline cache with the resident's own record so "My
     // Information" and the certificate auto-fill work without internet.
     final rid = _residentId;
@@ -204,6 +209,9 @@ class AppSession extends ChangeNotifier {
       '${_displayName.isEmpty ? "User" : _displayName} signed out',
       category: AuditCategory.auth,
     );
+    // Stop pushes to this device for the account that's leaving.
+    unawaited(PushService.instance.unregister());
+
     // Forget the remembered session and this resident's cached record.
     final rid = _residentId;
     unawaited(() async {

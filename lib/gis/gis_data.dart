@@ -19,6 +19,7 @@ class GisMapData {
     required this.boundaryPoints,
     required this.buildings,
     required this.buildingsOutside,
+    required this.buildingPathById,
     required this.roadsByType,
     required this.water,
     required this.vegetationByKind,
@@ -59,6 +60,14 @@ class GisMapData {
         minLon + n.dx * size.width / (cosLat * scale),
       );
 
+  /// lng/lat → map units (the same projection the layers were built with).
+  /// Used to draw geometry that arrives at runtime, e.g. custom-drawn
+  /// buildings from GET /api/gis/state.
+  Offset projectLonLat(double lon, double lat) => Offset(
+        (lon - minLon) * cosLat * scale,
+        (maxLat - lat) * scale,
+      );
+
   final Path boundary;
 
   /// Boundary ring in map units — used for hit tests.
@@ -66,6 +75,12 @@ class GisMapData {
 
   final Path buildings;
   final Path buildingsOutside; // context past the border, drawn faded
+
+  /// Every building footprint keyed by its OSM way id — so buildings tagged
+  /// in the MIS (government / business / household) can be drawn in their
+  /// category color and hit-tested on tap.
+  final Map<String, Path> buildingPathById;
+
   final Map<String, Path> roadsByType; // major / local / service
   final Path water;
   final Map<String, Path> vegetationByKind;
@@ -130,12 +145,17 @@ class GisMapData {
     // ── Buildings (split inside / outside the border) ────────
     final buildings = Path();
     final buildingsOutside = Path();
+    final buildingPathById = <String, Path>{};
     for (final f in buildingsJson['features'] as List) {
       final ring = _firstPolygonRing(f['geometry']);
       if (ring.isEmpty) continue;
       final pts = ring.map<Offset>(project).toList();
       (insideBoundary(_centroid(pts)) ? buildings : buildingsOutside)
           .addPolygon(pts, true);
+      final id = (f['id'] ?? f['properties']?['id'])?.toString();
+      if (id != null) {
+        buildingPathById[id] = Path()..addPolygon(pts, true);
+      }
     }
 
     // ── Roads, classified like gisRoadTypeForHighway() ───────
@@ -190,6 +210,7 @@ class GisMapData {
       boundaryPoints: boundaryPoints,
       buildings: buildings,
       buildingsOutside: buildingsOutside,
+      buildingPathById: buildingPathById,
       roadsByType: roadsByType,
       water: water,
       vegetationByKind: vegetationByKind,

@@ -202,6 +202,8 @@ class _MisShellState extends State<MisShell> {
                   AppSession.instance.signOut();
                 } else if (value == 'portal') {
                   _openPortal(context);
+                } else if (value == 'profile') {
+                  _openPortal(context, tab: 3);
                 }
               },
               itemBuilder: (_) => [
@@ -220,6 +222,17 @@ class _MisShellState extends State<MisShell> {
                   ),
                 ),
                 const PopupMenuDivider(),
+                const PopupMenuItem(
+                  value: 'profile',
+                  child: Row(
+                    children: [
+                      Icon(Icons.person_outline,
+                          size: 18, color: AppColors.navy),
+                      SizedBox(width: 8),
+                      Text('My Profile'),
+                    ],
+                  ),
+                ),
                 const PopupMenuItem(
                   value: 'portal',
                   child: Row(
@@ -346,27 +359,32 @@ class _MisDrawer extends StatelessWidget {
       child: SafeArea(
         child: Column(
           children: [
-            Padding(
-              padding: const EdgeInsets.all(AppSpacing.md),
-              child: Row(
-                children: [
-                  const SealBadge(size: 42),
-                  const SizedBox(width: AppSpacing.sm + 4),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text('Brgy. Conde Labac',
-                            style: text.titleSmall?.copyWith(
-                                color: AppColors.onNavy,
-                                fontWeight: FontWeight.w800)),
-                        Text('Management Information System',
-                            style: text.labelSmall
-                                ?.copyWith(color: AppColors.gold)),
-                      ],
+            // Tapping the seal/brand opens the public front page, same as
+            // the web navbar's logo link.
+            InkWell(
+              onTap: onOpenPortal,
+              child: Padding(
+                padding: const EdgeInsets.all(AppSpacing.md),
+                child: Row(
+                  children: [
+                    const SealBadge(size: 42),
+                    const SizedBox(width: AppSpacing.sm + 4),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('Brgy. Conde Labac',
+                              style: text.titleSmall?.copyWith(
+                                  color: AppColors.onNavy,
+                                  fontWeight: FontWeight.w800)),
+                          Text('Management Information System',
+                              style: text.labelSmall
+                                  ?.copyWith(color: AppColors.gold)),
+                        ],
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
             const Divider(color: AppColors.navyBorder),

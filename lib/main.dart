@@ -1,11 +1,18 @@
+import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 
 import 'core/theme/app_theme.dart';
 import 'data/offline_queue.dart';
+import 'data/push_service.dart';
 import 'data/session.dart';
 import 'data/stores.dart';
 import 'screens/main_shell.dart';
 import 'screens/mis/mis_shell.dart';
+import 'screens/profile/notifications_screen.dart';
+
+/// Lets a tapped push notification open the Notifications screen from
+/// anywhere (PushService has no BuildContext of its own).
+final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -19,6 +26,24 @@ Future<void> main() async {
     if (CertificateStore.instance.loaded) CertificateStore.instance.refresh();
     if (IncidentStore.instance.loaded) IncidentStore.instance.refresh();
   };
+
+  // Firebase push. Guarded so the app still runs if Firebase isn't available
+  // on this platform (e.g. desktop) or the config is missing.
+  try {
+    await Firebase.initializeApp();
+    PushService.instance.onOpenNotifications = () {
+      navigatorKey.currentState?.push(
+        MaterialPageRoute(builder: (_) => const NotificationsScreen()),
+      );
+    };
+    await PushService.instance.init();
+    // Remembered session already signed in → register this device now.
+    final accountId = AppSession.instance.accountId;
+    if (accountId != null) PushService.instance.registerForAccount(accountId);
+  } catch (e) {
+    debugPrint('Firebase/push init skipped: $e');
+  }
+
   runApp(const CaresApp());
   // Try to push anything still queued from the last run (no-op if offline).
   OfflineQueue.instance.flush();
@@ -38,6 +63,7 @@ class CaresApp extends StatelessWidget {
     return MaterialApp(
       title: 'C.A.R.E.S. · Barangay Conde Labac',
       debugShowCheckedModeBanner: false,
+      navigatorKey: navigatorKey,
       theme: AppTheme.light(),
       home: AnimatedBuilder(
         animation: AppSession.instance,

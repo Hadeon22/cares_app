@@ -1,4 +1,4 @@
-package com.example.cares_app
+package ph.gov.condelabac.cares
 
 import io.flutter.embedding.android.FlutterActivity
 

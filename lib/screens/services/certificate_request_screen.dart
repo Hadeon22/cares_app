@@ -232,7 +232,7 @@ class _CertificateRequestScreenState extends State<CertificateRequestScreen> {
           ),
           const AlertBanner(
             kind: AlertKind.info,
-            child: Text('You will receive an SMS notification once your '
+            child: Text('You will receive a phone notification once your '
                 'certificate is ready for pickup at the barangay hall.'),
           ),
           const SizedBox(height: AppSpacing.sm),

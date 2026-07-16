@@ -100,38 +100,45 @@ class _MainShellState extends State<MainShell> {
         // implicit back arrow is redundant (and crowded the header).
         automaticallyImplyLeading: false,
         titleSpacing: AppSpacing.md,
-        title: Row(
-          children: [
-            const SealBadge(size: 34),
-            const SizedBox(width: AppSpacing.sm + 4),
-            Flexible(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    AppStrings.appAcronym,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                          color: AppColors.onNavy,
-                          fontWeight: FontWeight.w800,
-                          letterSpacing: 1.2,
-                        ),
-                  ),
-                  Text(
-                    'Barangay Conde Labac',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                          color: AppColors.gold,
-                          letterSpacing: 0.8,
-                        ),
-                  ),
-                ],
+        // Tapping the Conde Labac seal / brand returns to the front page,
+        // same as the web navbar's brand link.
+        title: InkWell(
+          borderRadius: BorderRadius.circular(AppRadii.sm),
+          onTap: () => _goTo(0),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const SealBadge(size: 34),
+              const SizedBox(width: AppSpacing.sm + 4),
+              Flexible(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      AppStrings.appAcronym,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                            color: AppColors.onNavy,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: 1.2,
+                          ),
+                    ),
+                    Text(
+                      'Barangay Conde Labac',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                            color: AppColors.gold,
+                            letterSpacing: 0.8,
+                          ),
+                    ),
+                  ],
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
         actions: [
           if (session.isSignedIn) ...[
@@ -155,11 +162,63 @@ class _MainShellState extends State<MainShell> {
                 );
               },
             ),
+            // Same account menu as the MIS topbar avatar, so the avatar
+            // behaves identically everywhere in the app.
             Padding(
               padding: const EdgeInsets.only(right: AppSpacing.md),
-              child: InkWell(
-                borderRadius: BorderRadius.circular(AppRadii.pill),
-                onTap: () => _goTo(3),
+              child: PopupMenuButton<String>(
+                tooltip: 'Account',
+                offset: const Offset(0, 44),
+                onSelected: (value) {
+                  if (value == 'profile') {
+                    _goTo(3);
+                  } else if (value == 'signout') {
+                    AppSession.instance.signOut();
+                  }
+                },
+                itemBuilder: (_) => [
+                  PopupMenuItem(
+                    enabled: false,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(session.displayName,
+                            style: Theme.of(context)
+                                .textTheme
+                                .labelLarge
+                                ?.copyWith(fontWeight: FontWeight.w800)),
+                        Text(session.role?.title ?? '',
+                            style: Theme.of(context)
+                                .textTheme
+                                .labelSmall
+                                ?.copyWith(color: AppColors.inkMuted)),
+                      ],
+                    ),
+                  ),
+                  const PopupMenuDivider(),
+                  const PopupMenuItem(
+                    value: 'profile',
+                    child: Row(
+                      children: [
+                        Icon(Icons.person_outline,
+                            size: 18, color: AppColors.navy),
+                        SizedBox(width: 8),
+                        Text('My Profile'),
+                      ],
+                    ),
+                  ),
+                  const PopupMenuItem(
+                    value: 'signout',
+                    child: Row(
+                      children: [
+                        Icon(Icons.logout, size: 18, color: AppColors.flagRed),
+                        SizedBox(width: 8),
+                        Text('Sign Out',
+                            style: TextStyle(color: AppColors.flagRed)),
+                      ],
+                    ),
+                  ),
+                ],
                 child: CircleAvatar(
                   radius: 16,
                   backgroundColor: AppColors.gold,

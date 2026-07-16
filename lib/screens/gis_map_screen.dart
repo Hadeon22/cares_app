@@ -64,6 +64,42 @@ class GisMapScreen extends StatelessWidget {
     );
   }
 
+  /// Popup for a tagged building — the mobile version of the web map's
+  /// building popup (name, category, notes).
+  static void showBuildingDialog(BuildContext context, BuildingTag tag) {
+    final text = Theme.of(context).textTheme;
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.surface,
+        shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(AppRadii.md)),
+        title: Text(tag.name.isEmpty ? 'Tagged Building' : tag.name,
+            style: text.titleMedium?.copyWith(
+                color: AppColors.ink, fontWeight: FontWeight.w800)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            StatusBadge(tag.typeLabel, kind: BadgeKind.gold),
+            if (tag.notes.isNotEmpty) ...[
+              const SizedBox(height: AppSpacing.sm + 4),
+              Text(tag.notes,
+                  style: text.bodySmall
+                      ?.copyWith(color: AppColors.ink, height: 1.5)),
+            ],
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final text = Theme.of(context).textTheme;
@@ -83,12 +119,14 @@ class GisMapScreen extends StatelessWidget {
           child: GisMapView(
             focusPoint: focusPoint,
             onPinTap: (r) => showReportDialog(context, r),
+            onTaggedBuildingTap: (tag) => showBuildingDialog(context, tag),
           ),
         ),
         const SizedBox(height: AppSpacing.sm),
         Text(
           'This map is for reference only. For precise coordinates, contact '
-          'the barangay GIS officer. Tap a pin to view the report.',
+          'the barangay GIS officer. Tap a pin or a tagged building to view '
+          'its details.',
           style: text.labelSmall?.copyWith(color: AppColors.inkMuted),
         ),
         const SizedBox(height: AppSpacing.md),
@@ -118,12 +156,19 @@ class GisMapScreen extends StatelessWidget {
                         padding: const EdgeInsets.symmetric(vertical: 7),
                         child: Row(
                           children: [
+                            // Reports whose stored location falls outside
+                            // the barangay map can't be pinned — show a
+                            // muted "off-map" marker instead.
                             Icon(
-                              Icons.place,
+                              r.mapPoint == null
+                                  ? Icons.location_off_outlined
+                                  : Icons.place,
                               size: 20,
-                              color: r.resolved
-                                  ? const Color(0xFF16A34A)
-                                  : AppColors.flagRed,
+                              color: r.mapPoint == null
+                                  ? AppColors.inkMuted
+                                  : r.resolved
+                                      ? const Color(0xFF16A34A)
+                                      : AppColors.flagRed,
                             ),
                             const SizedBox(width: AppSpacing.sm),
                             Expanded(

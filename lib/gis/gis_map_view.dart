@@ -10,11 +10,13 @@ import 'gis_data.dart';
 /// GIS map (js/gis-map.js), view + pins only (no editing tools).
 ///
 /// Layers, back to front, with the web stylesheet's colors:
-/// boundary fill → vegetation → water → roads → buildings → report pins.
+/// boundary fill → vegetation → water → roads → buildings →
+/// tagged buildings (category colors) → report pins.
 ///
 /// Modes:
 ///  • view (default): shows [IncidentStore] pins; tapping a pin calls
-///    [onPinTap] with the report.
+///    [onPinTap] with the report, tapping a tagged building calls
+///    [onTaggedBuildingTap] with its tag.
 ///  • pick ([onPick] != null): tapping anywhere drops a pin and reports
 ///    its normalized (0..1) position — the incident modal's pin-picker.
 class GisMapView extends StatefulWidget {
@@ -22,6 +24,7 @@ class GisMapView extends StatefulWidget {
     super.key,
     this.onPick,
     this.onPinTap,
+    this.onTaggedBuildingTap,
     this.focusPoint,
     this.showReportPins = true,
   });
@@ -31,6 +34,9 @@ class GisMapView extends StatefulWidget {
 
   /// View mode: called when an incident pin is tapped.
   final ValueChanged<IncidentReport>? onPinTap;
+
+  /// View mode: called when a tagged building footprint is tapped.
+  final ValueChanged<BuildingTag>? onTaggedBuildingTap;
 
   /// Normalized point to center on at (2×) zoom when the map opens —
   /// used by the blotter's "View on Map".
@@ -94,25 +100,58 @@ class _GisMapViewState extends State<GisMapView> {
       widget.onPick!(normalized);
       return;
     }
-    if (widget.onPinTap == null || !widget.showReportPins) return;
-    // Hit-test existing report pins (~18 map units at current zoom).
-    final scale = _controller.value.getMaxScaleOnAxis();
-    final threshold = 22 / scale;
-    for (final r in IncidentStore.instance.all) {
-      final p = r.mapPoint;
-      if (p == null) continue;
-      final pinPos =
-          Offset(p.dx * data.size.width, p.dy * data.size.height);
-      if ((pinPos - scenePoint).distance <= threshold) {
-        widget.onPinTap!(r);
+    if (widget.onPinTap != null && widget.showReportPins) {
+      // Hit-test existing report pins (~18 map units at current zoom).
+      final scale = _controller.value.getMaxScaleOnAxis();
+      final threshold = 22 / scale;
+      for (final r in IncidentStore.instance.all) {
+        final p = r.mapPoint;
+        if (p == null) continue;
+        final pinPos =
+            Offset(p.dx * data.size.width, p.dy * data.size.height);
+        if ((pinPos - scenePoint).distance <= threshold) {
+          widget.onPinTap!(r);
+          return;
+        }
+      }
+    }
+    // Then tagged buildings — tapping a colored footprint opens its tag.
+    final onBuilding = widget.onTaggedBuildingTap;
+    if (onBuilding == null) return;
+    final state = GisStateStore.instance;
+    for (final entry in state.buildingTags.entries) {
+      if (entry.value.type.isEmpty) continue;
+      final path = _taggedBuildingPath(data, state, entry.key);
+      if (path != null && path.contains(scenePoint)) {
+        onBuilding(entry.value);
         return;
       }
     }
   }
 
+  /// Footprint for a tagged building id: an OSM building from the base
+  /// layer, or a custom-drawn one ('c<id>') projected from the API state.
+  static Path? _taggedBuildingPath(
+      GisMapData data, GisStateStore state, String key) {
+    final base = data.buildingPathById[key];
+    if (base != null) return base;
+    if (!key.startsWith('c')) return null;
+    for (final b in state.customBuildings) {
+      if (b.tagKey != key || b.ring.length < 3) continue;
+      return Path()
+        ..addPolygon(
+            [for (final (lng, lat) in b.ring) data.projectLonLat(lng, lat)],
+            true);
+    }
+    return null;
+  }
+
   @override
   Widget build(BuildContext context) {
     if (widget.showReportPins) IncidentStore.instance.ensureLoaded();
+    // Tagged buildings (government / business / households) come from the
+    // shared DB — same tags the web MIS map edits.
+    GisStateStore.instance.ensureLoaded();
     return FutureBuilder<GisMapData>(
       future: GisMapData.load(),
       builder: (context, snapshot) {
@@ -156,6 +195,7 @@ class _GisMapViewState extends State<GisMapView> {
                       data: data,
                       controller: _controller,
                       incidents: IncidentStore.instance,
+                      gisState: GisStateStore.instance,
                       showReportPins: widget.showReportPins,
                       picked: _picked,
                     ),
@@ -175,13 +215,15 @@ class _GisPainter extends CustomPainter {
     required this.data,
     required this.controller,
     required this.incidents,
+    required this.gisState,
     required this.showReportPins,
     required this.picked,
-  }) : super(repaint: Listenable.merge([controller, incidents]));
+  }) : super(repaint: Listenable.merge([controller, incidents, gisState]));
 
   final GisMapData data;
   final TransformationController controller;
   final IncidentStore incidents;
+  final GisStateStore gisState;
   final bool showReportPins;
   final Offset? picked;
 
@@ -193,6 +235,30 @@ class _GisPainter extends CustomPainter {
     'meadow': (Color(0x38A3E635), Color(0x594D7C0F)),
     'wood': (Color(0x47158B3D), Color(0x7314532D)),
   };
+
+  // Tagged-building category colors (GIS_BUILDING_TYPE_META /
+  // GIS_HOUSEHOLD_SUBCAT_META in js/gis-map.js). Households with a
+  // vulnerable classification take the classification's color, same as
+  // the web map's gis-cat-* fills.
+  static const _buildingTypeColors = {
+    'government': Color(0xFF92400E),
+    'business': Color(0xFF0891B2),
+    'households': Color(0xFF1D4ED8),
+  };
+  static const _householdSubcatColors = {
+    'seniors': Color(0xFFF59E0B),
+    'pwd': Color(0xFF8B5CF6),
+    'solo-parent': Color(0xFFDB2777),
+    'indigent': Color(0xFF0D9488),
+  };
+
+  static Color? colorForTag(BuildingTag tag) {
+    if (tag.type == 'households' && tag.subcat.isNotEmpty) {
+      return _householdSubcatColors[tag.subcat] ??
+          _buildingTypeColors['households'];
+    }
+    return _buildingTypeColors[tag.type];
+  }
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -258,6 +324,45 @@ class _GisPainter extends CustomPainter {
         ..strokeWidth = px(1)
         ..color = const Color(0x590D1B3E),
     );
+
+    // Tagged buildings (government / business / households) in their
+    // category colors, over the plain footprints — like the web map's
+    // .gis-building-tagged + gis-cat-* fills.
+    for (final entry in gisState.buildingTags.entries) {
+      final tag = entry.value;
+      final color = colorForTag(tag);
+      if (color == null) continue;
+      final path =
+          _GisMapViewState._taggedBuildingPath(data, gisState, entry.key);
+      if (path == null) continue;
+      canvas.drawPath(path, Paint()..color = color.withValues(alpha: 0.55));
+      canvas.drawPath(
+        path,
+        Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = px(1.4)
+          ..color = color,
+      );
+    }
+
+    // Custom-drawn buildings without a tag still get a plain footprint.
+    for (final b in gisState.customBuildings) {
+      if (b.ring.length < 3 || gisState.buildingTags.containsKey(b.tagKey)) {
+        continue;
+      }
+      final path = Path()
+        ..addPolygon(
+            [for (final (lng, lat) in b.ring) data.projectLonLat(lng, lat)],
+            true);
+      canvas.drawPath(path, Paint()..color = const Color(0x1F0D1B3E));
+      canvas.drawPath(
+        path,
+        Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = px(1)
+          ..color = const Color(0x590D1B3E),
+      );
+    }
 
     // Boundary outline on top (navy, 2px).
     canvas.drawPath(

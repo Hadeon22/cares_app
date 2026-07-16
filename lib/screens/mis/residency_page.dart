@@ -3,10 +3,10 @@ import 'package:flutter/material.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_constants.dart';
 import '../../data/stores.dart';
-import '../../widgets/app_toast.dart';
 import '../../widgets/form_widgets.dart';
 import '../../widgets/resident_detail.dart';
 import 'mis_widgets.dart';
+import 'resident_form_screen.dart';
 
 /// Barangay Residency module (js/pages/residency.js) — KPIs + the
 /// resident directory with name/purok filtering.
@@ -25,6 +25,16 @@ class _ResidencyPageState extends State<ResidencyPage> {
   void initState() {
     super.initState();
     ResidentStore.instance.ensureLoaded();
+  }
+
+  /// Opens the Add/Edit Resident form (null id = add); refreshes the
+  /// directory when the form saved something.
+  Future<void> _openForm({int? residentId}) async {
+    final saved = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(
+          builder: (_) => ResidentFormScreen(residentId: residentId)),
+    );
+    if (saved == true) ResidentStore.instance.refresh();
   }
 
   @override
@@ -76,9 +86,8 @@ class _ResidencyPageState extends State<ResidencyPage> {
         ]),
         MisCard(
           title: 'Resident Directory',
-          action: '⤓ Export CSV',
-          onAction: () => showAppToast(context, 'Exporting results as CSV...',
-              icon: Icons.download_outlined),
+          action: '+ Add Resident',
+          onAction: () => _openForm(),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -168,6 +177,14 @@ class _ResidencyPageState extends State<ResidencyPage> {
                                   );
                                 },
                           child: const Text('View'),
+                        ),
+                        TextButton(
+                          onPressed: r.id == null
+                              ? null
+                              : () => _openForm(residentId: r.id),
+                          style: TextButton.styleFrom(
+                              foregroundColor: AppColors.goldDeep),
+                          child: const Text('Edit'),
                         ),
                       ],
                     ),

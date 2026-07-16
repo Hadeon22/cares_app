@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:ui' show Offset;
 
 import 'package:flutter/foundation.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../gis/gis_data.dart';
 import 'api_client.dart';
@@ -419,6 +420,19 @@ class AuditLog extends ChangeNotifier with ApiStore {
   static final AuditLog instance = AuditLog._();
   static const int _max = 500;
 
+  /// Entries with this action are the "logs were cleared" markers. They are
+  /// immune to clearing (every wipe must stay on record) and only drop off
+  /// the trail after [_clearRetention].
+  static const String clearAction = 'AUDIT_CLEAR';
+  static const Duration _clearRetention = Duration(days: 90);
+  static const String _clearedAtKey = 'cares.audit.cleared_at';
+
+  /// Everything at or before this instant is hidden by a previous
+  /// "Clear Logs" (persisted so a clear survives app restarts). The DB
+  /// trail itself stays append-only.
+  DateTime? _clearedAt;
+  bool _clearedAtLoaded = false;
+
   final List<AuditEntry> _entries = [];
   List<AuditEntry> get entries => List.unmodifiable(_entries);
 
@@ -427,15 +441,39 @@ class AuditLog extends ChangeNotifier with ApiStore {
   String Function()? currentRole;
   int? Function()? currentAccountId;
 
+  Future<void> _loadClearedAt() async {
+    if (_clearedAtLoaded) return;
+    _clearedAtLoaded = true;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final ms = prefs.getInt(_clearedAtKey);
+      if (ms != null) _clearedAt = DateTime.fromMillisecondsSinceEpoch(ms);
+    } catch (_) {
+      /* best-effort — worst case old entries reappear */
+    }
+  }
+
+  /// Clear markers show as long as they haven't expired (90 days); every
+  /// other entry is hidden once a clear cutoff covers it.
+  bool _visible(AuditEntry e) {
+    if (e.action == clearAction) {
+      return DateTime.now().difference(e.ts) <= _clearRetention;
+    }
+    final cutoff = _clearedAt;
+    return cutoff == null || e.ts.isAfter(cutoff);
+  }
+
   @override
   Future<void> fetch() async {
+    await _loadClearedAt();
     final rows =
         await ApiClient.instance.get('/api/audit', query: {'limit': '200'})
             as List;
     _entries
       ..clear()
-      ..addAll(
-          rows.map((r) => AuditEntry.fromJson(r as Map<String, dynamic>)));
+      ..addAll(rows
+          .map((r) => AuditEntry.fromJson(r as Map<String, dynamic>))
+          .where(_visible));
   }
 
   void log(String action, String details,
@@ -471,10 +509,22 @@ class AuditLog extends ChangeNotifier with ApiStore {
     }).catchError((_) => null));
   }
 
-  /// Clears the local view only — the DB trail is append-only by design.
+  /// Clears the visible trail (the DB stays append-only): everything up to
+  /// now is hidden — persistently, so it survives restarts/refreshes — but
+  /// existing AUDIT_CLEAR markers are kept until their 90-day expiry.
   void clear() {
-    _entries.clear();
+    _clearedAt = DateTime.now();
+    _clearedAtLoaded = true;
+    _entries.removeWhere((e) => !_visible(e));
     notifyListeners();
+    unawaited(() async {
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setInt(_clearedAtKey, _clearedAt!.millisecondsSinceEpoch);
+      } catch (_) {
+        /* best-effort */
+      }
+    }());
   }
 }
 
@@ -779,6 +829,90 @@ class IncidentStore extends ChangeNotifier with ApiStore {
       }));
       return;
     }
+  }
+}
+
+/// ── GIS map state (GET /api/gis/state) ───────────────────────
+/// Building tags saved from the web MIS map (government / business /
+/// household), plus custom-drawn buildings — the shared-DB side of the
+/// web's gis_building_tags localStorage store.
+class BuildingTag {
+  const BuildingTag({
+    required this.name,
+    required this.type,
+    this.subcat = '',
+    this.notes = '',
+  });
+
+  factory BuildingTag.fromJson(Map<String, dynamic> j) => BuildingTag(
+        name: (j['name'] ?? '') as String? ?? '',
+        type: (j['type'] ?? '') as String? ?? '',
+        subcat: (j['subcat'] ?? '') as String? ?? '',
+        notes: (j['notes'] ?? '') as String? ?? '',
+      );
+
+  final String name;
+  final String type; // government | business | households
+  final String subcat; // seniors | pwd | solo-parent | indigent (households)
+  final String notes;
+
+  /// "Government Building", "Business", "Household · Senior Citizen" —
+  /// mirrors the web's gisTagDisplayMeta labels.
+  String get typeLabel {
+    const typeLabels = {
+      'government': 'Government Building',
+      'business': 'Business',
+      'households': 'Household',
+    };
+    const subcatLabels = {
+      'seniors': 'Senior Citizen',
+      'pwd': 'PWD',
+      'solo-parent': 'Solo Parent',
+      'indigent': 'Indigent Family',
+    };
+    final base = typeLabels[type] ?? type;
+    final sub = subcatLabels[subcat];
+    return sub == null ? base : '$base · $sub';
+  }
+}
+
+/// One custom-drawn building polygon (ring of lng/lat pairs), tagged via
+/// the key 'c<id>' in [GisStateStore.buildingTags].
+class CustomBuilding {
+  const CustomBuilding({required this.id, required this.ring});
+  final int id;
+  final List<(double lng, double lat)> ring;
+
+  String get tagKey => 'c$id';
+}
+
+class GisStateStore extends ChangeNotifier with ApiStore {
+  GisStateStore._();
+  static final GisStateStore instance = GisStateStore._();
+
+  /// building id (OSM way id, or 'c<id>' for custom) → tag.
+  Map<String, BuildingTag> buildingTags = {};
+  List<CustomBuilding> customBuildings = [];
+
+  @override
+  Future<void> fetch() async {
+    final j = await ApiClient.instance.get('/api/gis/state')
+        as Map<String, dynamic>;
+    buildingTags = {
+      for (final e in ((j['buildingTags'] as Map?) ?? const {}).entries)
+        e.key.toString():
+            BuildingTag.fromJson((e.value as Map).cast<String, dynamic>()),
+    };
+    customBuildings = [
+      for (final raw in (j['customBuildings'] as List? ?? const []))
+        CustomBuilding(
+          id: ((raw as Map)['id'] as num).toInt(),
+          ring: [
+            for (final p in (raw['coordinates'] as List? ?? const []))
+              ((p[0] as num).toDouble(), (p[1] as num).toDouble()),
+          ],
+        ),
+    ];
   }
 }
 
