@@ -11,6 +11,7 @@ import '../widgets/common.dart';
 import '../widgets/gis_banner.dart';
 import '../widgets/hero_section.dart';
 import '../widgets/info_card_row.dart';
+import '../widgets/pull_to_refresh.dart';
 import '../widgets/service_card.dart';
 
 /// Home: hero → hall card → quick info → services grid → GIS → news.
@@ -31,8 +32,14 @@ class HomeScreen extends StatelessWidget {
     final featured = ServiceItem.catalog.take(6).toList();
     final session = AppSession.instance;
 
-    return CustomScrollView(
-      physics: const BouncingScrollPhysics(),
+    // Clamping physics (via the always-scrollable parent): the iOS-style
+    // bounce revealed the bare scaffold background past the last section
+    // when pulling up at the page end. Always-scrollable keeps swipe-down
+    // reload working even when the content fits the screen.
+    return PullToRefresh(
+      child: CustomScrollView(
+      physics: const AlwaysScrollableScrollPhysics(
+          parent: ClampingScrollPhysics()),
       slivers: [
         SliverToBoxAdapter(
           child: HeroSection(
@@ -143,6 +150,7 @@ class HomeScreen extends StatelessWidget {
           ),
         ),
       ],
+      ),
     );
   }
 }

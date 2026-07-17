@@ -25,10 +25,11 @@ class CertificatesPage extends StatelessWidget {
   /// (undo = back to pending; the server allows it and re-notifies the
   /// requester that their request is under review again).
   Future<void> _setStatus(
-      BuildContext context, CertificateRequest r, String status) async {
+      BuildContext context, CertificateRequest r, String status,
+      {String? remarks}) async {
     try {
       await CertificateStore.instance.setStatus(r, status,
-          accountId: AppSession.instance.accountId);
+          remarks: remarks, accountId: AppSession.instance.accountId);
     } catch (e) {
       if (context.mounted) {
         showAppToast(context, e.toString(), icon: Icons.error_outline);
@@ -53,6 +54,105 @@ class CertificatesPage extends StatelessWidget {
               ? '${r.requestNo} moved back to pending.'
               : '${r.requestNo} $status!');
     }
+  }
+
+  /// Reject a request — a remark is required so the requester learns why.
+  /// The remark is persisted via [setStatus]'s `remarks` (certificate table
+  /// `remarks` column) alongside the rejected status.
+  Future<void> _rejectWithRemark(
+      BuildContext context, CertificateRequest r) async {
+    final ctrl = TextEditingController();
+    final formKey = GlobalKey<FormState>();
+    final remark = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Reject ${r.requestNo}'),
+        content: Form(
+          key: formKey,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Add a remark explaining why ${r.applicant.split(',').first}\'s '
+                'request is being rejected. This is saved with the request.',
+                style: Theme.of(context)
+                    .textTheme
+                    .bodySmall
+                    ?.copyWith(color: AppColors.inkMuted),
+              ),
+              const SizedBox(height: AppSpacing.sm),
+              TextFormField(
+                controller: ctrl,
+                autofocus: true,
+                maxLines: 4,
+                textCapitalization: TextCapitalization.sentences,
+                decoration: const InputDecoration(
+                  hintText: 'e.g. Incomplete requirements — missing valid ID.',
+                ),
+                validator: (v) => (v == null || v.trim().isEmpty)
+                    ? 'A remark is required to reject.'
+                    : null,
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cancel'),
+          ),
+          FilledButton.icon(
+            style: FilledButton.styleFrom(backgroundColor: AppColors.flagRed),
+            onPressed: () {
+              if (formKey.currentState?.validate() ?? false) {
+                Navigator.of(context).pop(ctrl.text.trim());
+              }
+            },
+            icon: const Icon(Icons.block, size: 16),
+            label: const Text('Reject'),
+          ),
+        ],
+      ),
+    );
+    if (remark == null || remark.isEmpty || !context.mounted) return;
+    await _setStatus(context, r, 'rejected', remarks: remark);
+  }
+
+  /// Read-only detail sheet — the full request + requester information,
+  /// mirroring the web map's View modal (openViewCert in certificates.js).
+  void _viewRequest(BuildContext context, CertificateRequest r) {
+    final loc = MaterialLocalizations.of(context);
+    String date(DateTime? d) => d == null ? '—' : loc.formatMediumDate(d);
+    showMisDetailSheet(
+      context,
+      title: r.requestNo,
+      badge: StatusBadge(
+        r.status[0].toUpperCase() + r.status.substring(1),
+        kind: _badges[r.status] ?? BadgeKind.gray,
+      ),
+      rows: [
+        ('Applicant', r.applicant),
+        ('Type', r.typeLabel),
+        ('Filed', date(r.createdAt)),
+        ('Purpose / Details', r.purpose),
+        ('Remarks', r.remarks),
+        ('Processed By', r.processedByName),
+        ('Processed At', date(r.processedAt)),
+        ('Linked Resident', r.residentId == null ? null : '#${r.residentId}'),
+      ],
+      actions: [
+        if (r.residentId != null)
+          TextButton.icon(
+            onPressed: () {
+              Navigator.of(context).pop();
+              _messageRequester(context, r);
+            },
+            icon: const Icon(Icons.mail_outline, size: 16),
+            label: const Text('Message'),
+          ),
+      ],
+    );
   }
 
   /// Send an in-app message to the requester — lands in their notification
@@ -170,13 +270,19 @@ class CertificatesPage extends StatelessWidget {
                                   Container(
                                     margin: const EdgeInsets.only(
                                         bottom: AppSpacing.sm),
-                                    padding:
-                                        const EdgeInsets.all(AppSpacing.sm + 4),
                                     decoration: BoxDecoration(
                                       color: AppColors.cream,
                                       borderRadius:
                                           BorderRadius.circular(AppRadii.sm),
                                     ),
+                                    clipBehavior: Clip.antiAlias,
+                                    child: InkWell(
+                                      // Tap the card to see the full request +
+                                      // requester detail (the old View button).
+                                      onTap: () => _viewRequest(context, r),
+                                      child: Padding(
+                                    padding:
+                                        const EdgeInsets.all(AppSpacing.sm + 4),
                                     child: Column(
                                       crossAxisAlignment:
                                           CrossAxisAlignment.start,
@@ -220,55 +326,53 @@ class CertificatesPage extends StatelessWidget {
                                               style: text.labelSmall?.copyWith(
                                                   color: AppColors.inkMuted)),
                                         ],
-                                        const SizedBox(height: 6),
-                                        Wrap(
-                                          spacing: 4,
-                                          runSpacing: 4,
-                                          crossAxisAlignment:
-                                              WrapCrossAlignment.center,
+                                        const SizedBox(height: 8),
+                                        // Actions on a single row — compact
+                                        // buttons. Full detail is a card tap.
+                                        Row(
                                           children: [
                                             if (r.status == 'pending') ...[
-                                              FilledButton(
-                                                style: FilledButton.styleFrom(
-                                                  padding: const EdgeInsets
-                                                      .symmetric(
-                                                      horizontal: AppSpacing.md,
-                                                      vertical: 8),
-                                                ),
+                                              _CertActionButton(
+                                                icon: Icons.check,
+                                                label: 'Approve',
+                                                filled: true,
                                                 onPressed: () => _setStatus(
                                                     context, r, 'approved'),
-                                                child: const Text('Approve'),
                                               ),
-                                              TextButton(
-                                                style: TextButton.styleFrom(
-                                                    foregroundColor:
-                                                        AppColors.flagRed),
-                                                onPressed: () => _setStatus(
-                                                    context, r, 'rejected'),
-                                                child: const Text('Reject'),
+                                              const SizedBox(width: 6),
+                                              _CertActionButton(
+                                                icon: Icons.block,
+                                                label: 'Reject',
+                                                danger: true,
+                                                onPressed: () =>
+                                                    _rejectWithRemark(
+                                                        context, r),
                                               ),
                                             ] else if (r.status == 'approved' ||
-                                                r.status == 'rejected')
-                                              TextButton.icon(
+                                                r.status == 'rejected') ...[
+                                              _CertActionButton(
+                                                icon: Icons.undo,
+                                                label: 'Undo',
                                                 onPressed: () => _setStatus(
                                                     context, r, 'pending'),
-                                                icon: const Icon(Icons.undo,
-                                                    size: 16),
-                                                label: const Text('Undo'),
                                               ),
-                                            if (r.residentId != null)
-                                              TextButton.icon(
+                                            ],
+                                            if (r.residentId != null) ...[
+                                              if (r.status != 'issued')
+                                                const SizedBox(width: 6),
+                                              _CertActionButton(
+                                                icon: Icons.mail_outline,
+                                                label: 'Message',
                                                 onPressed: () =>
                                                     _messageRequester(
                                                         context, r),
-                                                icon: const Icon(
-                                                    Icons.mail_outline,
-                                                    size: 16),
-                                                label: const Text('Message'),
                                               ),
+                                            ],
                                           ],
                                         ),
                                       ],
+                                    ),
+                                    ),
                                     ),
                                   ),
                               ],
@@ -277,6 +381,68 @@ class CertificatesPage extends StatelessWidget {
           ],
         );
       },
+    );
+  }
+}
+
+/// A compact, equal-width action button for the request card's single-row
+/// action strip. Expands to share the row so up to four fit on a phone.
+class _CertActionButton extends StatelessWidget {
+  const _CertActionButton({
+    required this.icon,
+    required this.label,
+    required this.onPressed,
+    this.filled = false,
+    this.danger = false,
+  });
+
+  final IconData icon;
+  final String label;
+  final VoidCallback onPressed;
+  final bool filled;
+  final bool danger;
+
+  @override
+  Widget build(BuildContext context) {
+    const padding = EdgeInsets.symmetric(horizontal: 6, vertical: 6);
+    final child = Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        Icon(icon, size: 15),
+        const SizedBox(width: 4),
+        Flexible(
+          child: Text(label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+        ),
+      ],
+    );
+    return Expanded(
+      child: filled
+          ? FilledButton(
+              // Gold fill with navy text — the app's default primary button
+              // style, matching the Approve/primary actions on other pages.
+              style: FilledButton.styleFrom(
+                padding: padding,
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                minimumSize: const Size(0, 34),
+              ),
+              onPressed: onPressed,
+              child: child,
+            )
+          : OutlinedButton(
+              style: OutlinedButton.styleFrom(
+                padding: padding,
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                minimumSize: const Size(0, 34),
+                foregroundColor: danger ? AppColors.flagRed : AppColors.navy,
+                side: BorderSide(
+                    color: danger ? AppColors.flagRed : AppColors.divider),
+              ),
+              onPressed: onPressed,
+              child: child,
+            ),
     );
   }
 }

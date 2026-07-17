@@ -42,14 +42,15 @@ flutter:
 # app_icon.png = seal on navy, app_icon_foreground.png = padded transparent
 # seal for Android's adaptive-icon safe zone).
 flutter_launcher_icons:
-  # Transparent seal, no navy backdrop. app_icon_foreground.png is the seal on
-  # a transparent background (padded for Android's adaptive-icon safe zone);
-  # transparent_bg.png is a fully-transparent layer so the adaptive icon has
-  # no coloured square behind the seal.
-  image_path: "assets/icon/app_icon_foreground.png"
+  # Seal on a navy gradient backdrop (matching the system's navy palette).
+  # bg_gradient.png is the navyDeep→navy→navyLight diagonal used as the
+  # adaptive-icon background; app_icon_foreground_big.png is a larger,
+  # less-padded transparent seal; app_icon_full.png is the composited icon
+  # (seal on the gradient) for the non-adaptive/legacy targets.
+  image_path: "assets/icon/app_icon_full.png"
   android: true
-  adaptive_icon_background: "assets/icon/transparent_bg.png"
-  adaptive_icon_foreground: "assets/icon/app_icon_foreground.png"
+  adaptive_icon_background: "assets/icon/bg_gradient.png"
+  adaptive_icon_foreground: "assets/icon/app_icon_foreground_big.png"
   ios: true
   remove_alpha_ios: true
   windows:

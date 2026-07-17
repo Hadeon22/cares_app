@@ -13,6 +13,33 @@ import 'mis_widgets.dart';
 class FeedbackPage extends StatelessWidget {
   const FeedbackPage({super.key});
 
+  /// Full feedback entry — opened by tapping a card.
+  void _viewFeedback(BuildContext context, FeedbackEntry f) {
+    final loc = MaterialLocalizations.of(context);
+    final text = Theme.of(context).textTheme;
+    showMisDetailSheet(
+      context,
+      title: f.name,
+      badge: StatusBadge(f.category, kind: BadgeKind.gray),
+      rows: [
+        ('Rating', '${f.rating} / 5 ★'),
+        ('Category', f.category),
+        ('Submitted By', f.name),
+        ('Contact', f.contact),
+        ('Status', f.status[0].toUpperCase() + f.status.substring(1)),
+        ('Submitted', loc.formatMediumDate(f.ts)),
+      ],
+      extra: [
+        const SizedBox(height: AppSpacing.sm),
+        Text('Comment',
+            style: text.bodySmall?.copyWith(color: AppColors.inkMuted)),
+        const SizedBox(height: 2),
+        Text(f.comment.isEmpty ? '—' : f.comment,
+            style: text.bodyMedium?.copyWith(color: AppColors.ink, height: 1.4)),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final store = FeedbackStore.instance;
@@ -114,11 +141,16 @@ class FeedbackPage extends StatelessWidget {
                             width: double.infinity,
                             margin:
                                 const EdgeInsets.only(bottom: AppSpacing.sm),
-                            padding: const EdgeInsets.all(AppSpacing.sm + 4),
                             decoration: BoxDecoration(
                               color: AppColors.cream,
                               borderRadius: BorderRadius.circular(AppRadii.sm),
                             ),
+                            clipBehavior: Clip.antiAlias,
+                            child: InkWell(
+                              // Tap to see the full feedback entry + comment.
+                              onTap: () => _viewFeedback(context, f),
+                              child: Padding(
+                            padding: const EdgeInsets.all(AppSpacing.sm + 4),
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
@@ -154,9 +186,13 @@ class FeedbackPage extends StatelessWidget {
                                 ),
                                 const SizedBox(height: 6),
                                 Text(f.comment,
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
                                     style: text.bodySmall?.copyWith(
                                         color: AppColors.ink, height: 1.45)),
                               ],
+                            ),
+                            ),
                             ),
                           ),
                       ],

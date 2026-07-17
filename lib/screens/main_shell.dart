@@ -32,14 +32,28 @@ class MainShell extends StatefulWidget {
 class _MainShellState extends State<MainShell> {
   late int _index = widget.initialIndex;
 
-  void _goTo(int index) {
-    // The 5th destination (staff only) returns to the MIS shell, which
-    // is the root route for Admin/Officer sessions.
-    if (index == 4) {
+  /// Switches the visible portal screen (0=Home, 1=Services, 2=GIS,
+  /// 3=Profile). Called programmatically and by the nav bar via [_onNavTap].
+  void _goTo(int index) => setState(() => _index = index);
+
+  /// The nav bar keeps Profile as its last destination, with the staff-only
+  /// MIS button just before it. Map a tapped destination back to a screen
+  /// (or the MIS return action).
+  void _onNavTap(bool isStaff, int dest) {
+    if (isStaff && dest == 3) {
+      // MIS — return to the MIS shell, the root route for Admin/Officer.
       Navigator.of(context).popUntil((r) => r.isFirst);
       return;
     }
-    setState(() => _index = index);
+    // Profile is the rightmost destination (index 4 for staff, 3 otherwise).
+    _goTo(isStaff && dest == 4 ? 3 : dest);
+  }
+
+  /// Which nav destination is highlighted for the current screen — Profile
+  /// (screen 3) sits last in the bar.
+  int _navSelectedIndex(bool isStaff) {
+    if (_index == 3) return isStaff ? 4 : 3;
+    return _index;
   }
 
   Timer? _notifTimer;
@@ -280,8 +294,9 @@ class _MainShellState extends State<MainShell> {
         ],
       ),
       bottomNavigationBar: NavigationBar(
-        selectedIndex: _index,
-        onDestinationSelected: _goTo,
+        selectedIndex: _navSelectedIndex(session.role?.isStaff ?? false),
+        onDestinationSelected: (dest) =>
+            _onNavTap(session.role?.isStaff ?? false, dest),
         destinations: [
           const NavigationDestination(
             icon: Icon(Icons.home_outlined),
@@ -298,17 +313,19 @@ class _MainShellState extends State<MainShell> {
             selectedIcon: Icon(Icons.map),
             label: 'GIS Map',
           ),
-          const NavigationDestination(
-            icon: Icon(Icons.person_outline),
-            selectedIcon: Icon(Icons.person),
-            label: 'Profile',
-          ),
+          // MIS (staff only) sits just before Profile, so Profile stays the
+          // rightmost destination for everyone.
           if (session.role?.isStaff ?? false)
             const NavigationDestination(
               icon: Icon(Icons.space_dashboard_outlined),
               selectedIcon: Icon(Icons.space_dashboard),
               label: 'MIS',
             ),
+          const NavigationDestination(
+            icon: Icon(Icons.person_outline),
+            selectedIcon: Icon(Icons.person),
+            label: 'Profile',
+          ),
         ],
       ),
     );

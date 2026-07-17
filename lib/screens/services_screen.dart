@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../core/constants/app_constants.dart';
 import '../models/models.dart';
 import '../widgets/common.dart';
+import '../widgets/pull_to_refresh.dart';
 import '../widgets/service_card.dart';
 
 /// Full catalog of barangay services in a responsive grid.
@@ -11,8 +12,10 @@ class ServicesScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return CustomScrollView(
-      physics: const BouncingScrollPhysics(),
+    return PullToRefresh(
+      child: CustomScrollView(
+      physics: const AlwaysScrollableScrollPhysics(
+          parent: ClampingScrollPhysics()),
       slivers: [
         const SliverPadding(
           padding: EdgeInsets.fromLTRB(
@@ -48,6 +51,7 @@ class ServicesScreen extends StatelessWidget {
           ),
         ),
       ],
+      ),
     );
   }
 }

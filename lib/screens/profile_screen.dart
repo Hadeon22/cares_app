@@ -5,6 +5,7 @@ import '../core/constants/app_constants.dart';
 import '../core/utils/fade_slide.dart';
 import '../data/session.dart';
 import '../widgets/app_toast.dart';
+import '../widgets/pull_to_refresh.dart';
 import 'login_screen.dart';
 import 'profile/activity_history_screen.dart';
 import 'profile/my_info_screen.dart';
@@ -37,8 +38,10 @@ class ProfileScreen extends StatelessWidget {
     void push(Widget screen) => Navigator.of(context)
         .push(MaterialPageRoute(builder: (_) => screen));
 
-    return ListView(
-      physics: const BouncingScrollPhysics(),
+    return PullToRefresh(
+      child: ListView(
+      physics: const AlwaysScrollableScrollPhysics(
+          parent: ClampingScrollPhysics()),
       padding: const EdgeInsets.fromLTRB(
           AppSpacing.gutter, AppSpacing.lg, AppSpacing.gutter, AppSpacing.xxl),
       children: [
@@ -152,6 +155,7 @@ class ProfileScreen extends StatelessWidget {
           ),
         ),
       ],
+      ),
     );
   }
 }

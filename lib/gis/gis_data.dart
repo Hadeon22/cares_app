@@ -20,6 +20,10 @@ class GisMapData {
     required this.buildings,
     required this.buildingsOutside,
     required this.buildingPathById,
+    required this.buildingInsideIds,
+    required this.vegetationPathById,
+    required this.vegetationKindById,
+    required this.vegetationInsideIds,
     required this.roadsByType,
     required this.water,
     required this.vegetationByKind,
@@ -80,6 +84,17 @@ class GisMapData {
   /// in the MIS (government / business / household) can be drawn in their
   /// category color and hit-tested on tap.
   final Map<String, Path> buildingPathById;
+
+  /// Ids of buildings whose centroid is inside the boundary (the rest are
+  /// the faded outside-context footprints). Used to rebuild the merged
+  /// building layers when web-side deletions (tombstones) hide some.
+  final Set<String> buildingInsideIds;
+
+  /// Per-feature vegetation, so web-side "cut" edits can be subtracted from
+  /// individual areas: id → footprint / kind / inside-boundary flag.
+  final Map<String, Path> vegetationPathById;
+  final Map<String, String> vegetationKindById;
+  final Set<String> vegetationInsideIds;
 
   final Map<String, Path> roadsByType; // major / local / service
   final Path water;
@@ -146,15 +161,17 @@ class GisMapData {
     final buildings = Path();
     final buildingsOutside = Path();
     final buildingPathById = <String, Path>{};
+    final buildingInsideIds = <String>{};
     for (final f in buildingsJson['features'] as List) {
       final ring = _firstPolygonRing(f['geometry']);
       if (ring.isEmpty) continue;
       final pts = ring.map<Offset>(project).toList();
-      (insideBoundary(_centroid(pts)) ? buildings : buildingsOutside)
-          .addPolygon(pts, true);
+      final inside = insideBoundary(_centroid(pts));
+      (inside ? buildings : buildingsOutside).addPolygon(pts, true);
       final id = (f['id'] ?? f['properties']?['id'])?.toString();
       if (id != null) {
         buildingPathById[id] = Path()..addPolygon(pts, true);
+        if (inside) buildingInsideIds.add(id);
       }
     }
 
@@ -192,15 +209,25 @@ class GisMapData {
     // ── Vegetation by kind (split inside / outside) ──────────
     final vegetationByKind = <String, Path>{};
     final vegetationOutside = Path();
+    final vegetationPathById = <String, Path>{};
+    final vegetationKindById = <String, String>{};
+    final vegetationInsideIds = <String>{};
     for (final f in vegetationJson['features'] as List) {
       final ring = _firstPolygonRing(f['geometry']);
       if (ring.isEmpty) continue;
       final pts = ring.map<Offset>(project).toList();
-      if (insideBoundary(_centroid(pts))) {
-        final kind = (f['properties']?['kind'] ?? 'wood') as String;
+      final kind = (f['properties']?['kind'] ?? 'wood') as String;
+      final inside = insideBoundary(_centroid(pts));
+      if (inside) {
         (vegetationByKind[kind] ??= Path()).addPolygon(pts, true);
       } else {
         vegetationOutside.addPolygon(pts, true);
+      }
+      final id = (f['id'] ?? f['properties']?['id'])?.toString();
+      if (id != null) {
+        vegetationPathById[id] = Path()..addPolygon(pts, true);
+        vegetationKindById[id] = kind;
+        if (inside) vegetationInsideIds.add(id);
       }
     }
 
@@ -211,6 +238,10 @@ class GisMapData {
       buildings: buildings,
       buildingsOutside: buildingsOutside,
       buildingPathById: buildingPathById,
+      buildingInsideIds: buildingInsideIds,
+      vegetationPathById: vegetationPathById,
+      vegetationKindById: vegetationKindById,
+      vegetationInsideIds: vegetationInsideIds,
       roadsByType: roadsByType,
       water: water,
       vegetationByKind: vegetationByKind,

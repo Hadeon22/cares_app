@@ -10,6 +10,7 @@ import '../../data/stores.dart';
 import '../../widgets/app_toast.dart';
 import '../../widgets/common.dart';
 import '../../widgets/offline_banner.dart';
+import '../../widgets/pull_to_refresh.dart';
 import '../gis_map_screen.dart';
 import '../main_shell.dart';
 import '../profile/notifications_screen.dart';
@@ -75,6 +76,7 @@ class MisShell extends StatefulWidget {
 class _MisShellState extends State<MisShell> {
   String _module = 'dashboard';
   Timer? _notifTimer;
+  final _scaffoldKey = GlobalKey<ScaffoldState>();
 
   _MisModule get _current => _modules.firstWhere((m) => m.key == _module);
 
@@ -120,6 +122,22 @@ class _MisShellState extends State<MisShell> {
     );
   }
 
+  /// Adds swipe-down-to-reload to every MIS page. The GIS map manages its
+  /// own pull-to-refresh (and its own scroll physics), so it's left as-is;
+  /// every other page is a plain list, wrapped here so the gesture works
+  /// even when the content fits the screen.
+  Widget _wrapRefresh(Widget page) {
+    if (_module == 'gis') return page;
+    return RefreshIndicator(
+      color: AppColors.navy,
+      onRefresh: refreshLoadedStores,
+      child: ScrollConfiguration(
+        behavior: const AlwaysScrollableBehavior(),
+        child: page,
+      ),
+    );
+  }
+
   Widget _buildPage() {
     switch (_module) {
       case 'dashboard':
@@ -157,6 +175,7 @@ class _MisShellState extends State<MisShell> {
     final loc = MaterialLocalizations.of(context);
 
     return Scaffold(
+      key: _scaffoldKey,
       appBar: AppBar(
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -283,25 +302,39 @@ class _MisShellState extends State<MisShell> {
           _openPortal(context);
         },
       ),
-      body: Column(
-        children: [
-          const OfflineBanner(),
-          Expanded(
-            child: AnimatedSwitcher(
-              duration: AppDurations.medium,
-              child:
-                  KeyedSubtree(key: ValueKey(_module), child: _buildPage()),
+      // A rightward swipe anywhere on a page opens the sidebar drawer
+      // (in addition to Scaffold's own left-edge drag). Most MIS pages
+      // scroll vertically, so they don't claim the horizontal drag and the
+      // swipe wins; horizontally-scrolling tables keep their own scroll.
+      body: GestureDetector(
+        onHorizontalDragEnd: (details) {
+          final v = details.primaryVelocity ?? 0;
+          if (v > 250 && !(_scaffoldKey.currentState?.isDrawerOpen ?? false)) {
+            _scaffoldKey.currentState?.openDrawer();
+          }
+        },
+        child: Column(
+          children: [
+            const OfflineBanner(),
+            Expanded(
+              child: AnimatedSwitcher(
+                duration: AppDurations.medium,
+                child: KeyedSubtree(
+                    key: ValueKey(_module), child: _wrapRefresh(_buildPage())),
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
       // Same bottom bar as the portal, with MIS active — tapping a
       // portal tab opens the landing pages on top of the MIS.
       bottomNavigationBar: NavigationBar(
-        selectedIndex: 4,
+        // MIS is the active destination (index 3); Profile stays rightmost.
+        selectedIndex: 3,
         onDestinationSelected: (i) {
-          if (i == 4) return; // already here
-          _openPortal(context, tab: i);
+          if (i == 3) return; // MIS — already here
+          // Profile is the last destination → portal tab 3.
+          _openPortal(context, tab: i == 4 ? 3 : i);
         },
         destinations: const [
           NavigationDestination(
@@ -320,14 +353,14 @@ class _MisShellState extends State<MisShell> {
             label: 'GIS Map',
           ),
           NavigationDestination(
-            icon: Icon(Icons.person_outline),
-            selectedIcon: Icon(Icons.person),
-            label: 'Profile',
-          ),
-          NavigationDestination(
             icon: Icon(Icons.space_dashboard_outlined),
             selectedIcon: Icon(Icons.space_dashboard),
             label: 'MIS',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.person_outline),
+            selectedIcon: Icon(Icons.person),
+            label: 'Profile',
           ),
         ],
       ),

@@ -93,6 +93,7 @@ class _IncidentReportScreenState extends State<IncidentReportScreen> {
         mapPoint: _pickedPoint,
         complainantId: session.residentId,
         accountId: session.accountId,
+        reporterRole: session.serverRole,
       );
     } catch (e) {
       if (mounted) {

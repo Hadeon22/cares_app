@@ -203,6 +203,9 @@ class CertificateRequest {
     this.purpose = '',
     this.status = 'pending',
     this.residentId,
+    this.remarks,
+    this.processedByName,
+    this.processedAt,
   });
 
   factory CertificateRequest.fromJson(Map<String, dynamic> j) =>
@@ -214,6 +217,11 @@ class CertificateRequest {
         purpose: (j['purpose'] ?? '') as String? ?? '',
         status: (j['status'] ?? 'pending') as String,
         residentId: j['resident_id'] as int?,
+        remarks: j['remarks'] as String?,
+        processedByName: j['processed_by_name'] as String?,
+        processedAt: j['processed_at'] == null
+            ? null
+            : _parseTs(j['processed_at']),
         createdAt: _parseTs(j['created_at']),
       );
 
@@ -223,6 +231,13 @@ class CertificateRequest {
   final String typeKey;
   final String purpose;
   String status; // pending | approved | issued | rejected
+
+  /// Staff note attached when processing (e.g. the reason for a rejection).
+  String? remarks;
+
+  /// Who processed it and when — filled in by the server on status changes.
+  String? processedByName;
+  DateTime? processedAt;
 
   /// Who filed it — links the row back to a resident's account ("My Requests").
   final int? residentId;
@@ -309,7 +324,9 @@ class CertificateStore extends ChangeNotifier with ApiStore {
   Future<void> setStatus(CertificateRequest r, String status,
       {String? remarks, int? accountId}) async {
     final prev = r.status;
+    final prevRemarks = r.remarks;
     r.status = status; // optimistic — revert on failure
+    if (remarks != null) r.remarks = remarks;
     notifyListeners();
     try {
       await ApiClient.instance.patch('/api/certificates/${r.id}', {
@@ -319,6 +336,7 @@ class CertificateStore extends ChangeNotifier with ApiStore {
       });
     } catch (_) {
       r.status = prev;
+      r.remarks = prevRemarks;
       notifyListeners();
       rethrow;
     }
@@ -335,6 +353,8 @@ class IncidentType {
   final bool interpersonal;
 }
 
+// Includes the former staff-only "accident marker" types (vehicular / fire /
+// medical) — accident pings and community reports are one report type now.
 const List<IncidentType> kIncidentTypes = [
   IncidentType('noise', 'Noise Complaint'),
   IncidentType('dispute', 'Property Dispute', interpersonal: true),
@@ -343,6 +363,9 @@ const List<IncidentType> kIncidentTypes = [
   IncidentType('vandalism', 'Vandalism'),
   IncidentType('domestic', 'Domestic Disturbance', interpersonal: true),
   IncidentType('flooding', 'Flooding / Natural Hazard'),
+  IncidentType('vehicular', 'Vehicular Accident'),
+  IncidentType('fire', 'Fire Incident'),
+  IncidentType('medical', 'Medical Emergency'),
   IncidentType('other', 'Other'),
 ];
 
@@ -433,6 +456,11 @@ class AuditLog extends ChangeNotifier with ApiStore {
   DateTime? _clearedAt;
   bool _clearedAtLoaded = false;
 
+  /// Latest AUDIT_CLEAR marker seen on the shared trail — a clear performed
+  /// on the web (or another device) shows up here after a fetch and hides
+  /// older entries, mirroring how the web honors this app's clears.
+  DateTime? _serverClearedAt;
+
   final List<AuditEntry> _entries = [];
   List<AuditEntry> get entries => List.unmodifiable(_entries);
 
@@ -453,13 +481,22 @@ class AuditLog extends ChangeNotifier with ApiStore {
     }
   }
 
+  /// The later of this device's own clear and any clear recorded on the
+  /// shared trail — everything at or before it is hidden.
+  DateTime? get _effectiveClearedAt {
+    final a = _clearedAt, b = _serverClearedAt;
+    if (a == null) return b;
+    if (b == null) return a;
+    return a.isAfter(b) ? a : b;
+  }
+
   /// Clear markers show as long as they haven't expired (90 days); every
   /// other entry is hidden once a clear cutoff covers it.
   bool _visible(AuditEntry e) {
     if (e.action == clearAction) {
       return DateTime.now().difference(e.ts) <= _clearRetention;
     }
-    final cutoff = _clearedAt;
+    final cutoff = _effectiveClearedAt;
     return cutoff == null || e.ts.isAfter(cutoff);
   }
 
@@ -469,11 +506,22 @@ class AuditLog extends ChangeNotifier with ApiStore {
     final rows =
         await ApiClient.instance.get('/api/audit', query: {'limit': '200'})
             as List;
+    final entries = rows
+        .map((r) => AuditEntry.fromJson(r as Map<String, dynamic>))
+        .toList();
+    // The latest clear marker on the shared trail becomes a cutoff, so a
+    // clear done on the web (or another device) hides older entries here.
+    DateTime? serverCleared;
+    for (final e in entries) {
+      if (e.action == clearAction &&
+          (serverCleared == null || e.ts.isAfter(serverCleared))) {
+        serverCleared = e.ts;
+      }
+    }
+    _serverClearedAt = serverCleared;
     _entries
       ..clear()
-      ..addAll(rows
-          .map((r) => AuditEntry.fromJson(r as Map<String, dynamic>))
-          .where(_visible));
+      ..addAll(entries.where(_visible));
   }
 
   void log(String action, String details,
@@ -656,6 +704,7 @@ class IncidentReport {
     this.mapPoint,
     this.resolved = false,
     this.complainantId,
+    this.reporterRole = '',
   });
 
   final int? id;
@@ -677,6 +726,15 @@ class IncidentReport {
   /// canvas (converted from the DB's real lat/lng).
   final Offset? mapPoint;
   bool resolved;
+
+  /// account.role of whoever filed it ('' when filed signed-out) — colors
+  /// the pin official (Admin/Officer/Staff) vs resident.
+  final String reporterRole;
+
+  bool get isOfficial =>
+      reporterRole == 'Admin' ||
+      reporterRole == 'Officer' ||
+      reporterRole == 'Staff';
 
   String get typeLabel => incidentTypeByKey(typeKey).label;
 }
@@ -729,6 +787,7 @@ class IncidentStore extends ChangeNotifier with ApiStore {
         witnesses: (j['witnesses'] ?? '') as String? ?? '',
         location: 'Pinned on GIS map',
         complainantId: j['complainant_id'] as int?,
+        reporterRole: (j['reporter_role'] ?? '') as String? ?? '',
         mapPoint: (lat != null && lng != null)
             ? gis.normalizedFromLatLng(lat, lng)
             : null,
@@ -749,6 +808,7 @@ class IncidentStore extends ChangeNotifier with ApiStore {
     Offset? mapPoint,
     int? complainantId,
     int? accountId,
+    String reporterRole = '',
   }) async {
     double? lat, lng;
     if (mapPoint != null) {
@@ -781,6 +841,7 @@ class IncidentStore extends ChangeNotifier with ApiStore {
         typeKey: typeKey,
         complainant: complainant,
         complainantId: complainantId,
+        reporterRole: reporterRole,
         narration: narration,
         contact: contact,
         respondent: respondent,
@@ -797,6 +858,7 @@ class IncidentStore extends ChangeNotifier with ApiStore {
       typeKey: typeKey,
       complainant: complainant,
       complainantId: complainantId,
+      reporterRole: reporterRole,
       narration: narration,
       contact: contact,
       respondent: respondent,
@@ -886,6 +948,93 @@ class CustomBuilding {
   String get tagKey => 'c$id';
 }
 
+typedef LngLat = (double lng, double lat);
+
+List<LngLat> _lngLatList(dynamic coords) => [
+      for (final p in (coords as List? ?? const []))
+        ((p[0] as num).toDouble(), (p[1] as num).toDouble()),
+    ];
+
+/// Staff-drawn road (map_feature type 'road').
+class CustomRoad {
+  const CustomRoad(
+      {required this.id, required this.points, this.name = '', this.roadType = 'local'});
+  final int id;
+  final List<LngLat> points;
+  final String name;
+  final String roadType; // major | local | service
+}
+
+/// Staff-drawn vegetation area (map_feature type 'vegetation').
+class CustomVegetation {
+  const CustomVegetation(
+      {required this.id, required this.ring, this.kind = '', this.notes = ''});
+  final int id;
+  final List<LngLat> ring;
+  final String kind; // farmland | farmyard | orchard | meadow | wood
+  final String notes;
+}
+
+/// Construction area (map_feature type 'construction').
+class ConstructionArea {
+  const ConstructionArea({
+    required this.id,
+    required this.ring,
+    this.name = '',
+    this.status = 'planned',
+    this.notes = '',
+  });
+  final int id;
+  final List<LngLat> ring;
+  final String name;
+  final String status; // planned | ongoing | completed
+  final String notes;
+
+  String get statusLabel =>
+      {'planned': 'Planned', 'ongoing': 'Ongoing', 'completed': 'Completed'}[status] ??
+      status;
+}
+
+/// Hazard ping (map_feature type 'hazard') — a circular area marker.
+class HazardZone {
+  const HazardZone({
+    required this.id,
+    required this.lng,
+    required this.lat,
+    this.radius = 35,
+    this.hazardType = 'other',
+    this.severity = '',
+    this.notes = '',
+  });
+  final int id;
+  final double lng;
+  final double lat;
+
+  /// In map units of the web's 0..1000 viewBox (GIS_HAZARD_PING_RADIUS).
+  final double radius;
+  final String hazardType; // flood | landslide | fire | other
+  final String severity; // low | medium | high | critical | ''
+  final String notes;
+
+  String get typeLabel =>
+      {
+        'flood': 'Flood Zone',
+        'landslide': 'Landslide Risk',
+        'fire': 'Fire Risk',
+        'other': 'Other Hazard',
+      }[hazardType] ??
+      'Hazard';
+}
+
+/// Lightweight view-model for a tapped map feature — the map screen turns
+/// this into a details dialog.
+class MapFeatureInfo {
+  const MapFeatureInfo({required this.title, required this.badge, this.body = ''});
+  final String title;
+  final String badge;
+  final String body;
+}
+
 class GisStateStore extends ChangeNotifier with ApiStore {
   GisStateStore._();
   static final GisStateStore instance = GisStateStore._();
@@ -893,6 +1042,19 @@ class GisStateStore extends ChangeNotifier with ApiStore {
   /// building id (OSM way id, or 'c<id>' for custom) → tag.
   Map<String, BuildingTag> buildingTags = {};
   List<CustomBuilding> customBuildings = [];
+  List<CustomRoad> customRoads = [];
+  List<CustomVegetation> customVegetation = [];
+  List<ConstructionArea> construction = [];
+  List<HazardZone> hazards = [];
+
+  /// OSM buildings tombstoned from the web map's Edit Mode.
+  Set<String> deletedBuildingIds = {};
+
+  /// vegetation id (OSM or map_feature id) → cut rings trimmed out of it.
+  Map<String, List<List<LngLat>>> vegetationCuts = {};
+
+  /// Bumped on every fetch so the painter can cache derived geometry.
+  int version = 0;
 
   @override
   Future<void> fetch() async {
@@ -907,12 +1069,76 @@ class GisStateStore extends ChangeNotifier with ApiStore {
       for (final raw in (j['customBuildings'] as List? ?? const []))
         CustomBuilding(
           id: ((raw as Map)['id'] as num).toInt(),
-          ring: [
-            for (final p in (raw['coordinates'] as List? ?? const []))
-              ((p[0] as num).toDouble(), (p[1] as num).toDouble()),
-          ],
+          ring: _lngLatList(raw['coordinates']),
         ),
     ];
+
+    final features = (j['features'] as Map?) ?? const {};
+    List<Map<String, dynamic>> rows(String type) => [
+          for (final raw in (features[type] as List? ?? const []))
+            (raw as Map).cast<String, dynamic>(),
+        ];
+
+    customRoads = [
+      for (final r in rows('road'))
+        CustomRoad(
+          id: (r['id'] as num).toInt(),
+          points: _lngLatList(r['coordinates']),
+          name: (r['name'] ?? '') as String? ?? '',
+          roadType: (r['roadType'] ?? 'local') as String? ?? 'local',
+        ),
+    ];
+    customVegetation = [
+      for (final r in rows('vegetation'))
+        CustomVegetation(
+          id: (r['id'] as num).toInt(),
+          ring: _lngLatList((r['coordinates'] as List).isEmpty
+              ? const []
+              : (r['coordinates'] as List)[0]),
+          kind: (r['kind'] ?? '') as String? ?? '',
+          notes: (r['notes'] ?? '') as String? ?? '',
+        ),
+    ];
+    construction = [
+      for (final r in rows('construction'))
+        ConstructionArea(
+          id: (r['id'] as num).toInt(),
+          ring: _lngLatList((r['coordinates'] as List).isEmpty
+              ? const []
+              : (r['coordinates'] as List)[0]),
+          name: (r['name'] ?? '') as String? ?? '',
+          status: (r['status'] ?? 'planned') as String? ?? 'planned',
+          notes: (r['notes'] ?? '') as String? ?? '',
+        ),
+    ];
+    hazards = [
+      for (final r in rows('hazard'))
+        HazardZone(
+          id: (r['id'] as num).toInt(),
+          lng: ((r['coordinates'] as List)[0] as num).toDouble(),
+          lat: ((r['coordinates'] as List)[1] as num).toDouble(),
+          radius: (r['radius'] as num?)?.toDouble() ?? 35,
+          hazardType: (r['hazardType'] ?? 'other') as String? ?? 'other',
+          severity: (r['severity'] ?? '') as String? ?? '',
+          notes: (r['notes'] ?? '') as String? ?? '',
+        ),
+    ];
+    // (map_feature 'accident' rows were migrated into the incident table —
+    // accidents render as regular report pins now.)
+
+    deletedBuildingIds = {};
+    vegetationCuts = {};
+    for (final raw in (j['osmEdits'] as List? ?? const [])) {
+      final e = (raw as Map).cast<String, dynamic>();
+      final osmId = e['osm_id']?.toString() ?? '';
+      if (e['edit_type'] == 'delete' && e['feature_kind'] == 'building') {
+        deletedBuildingIds.add(osmId);
+      } else if (e['edit_type'] == 'cut' && e['feature_kind'] == 'vegetation') {
+        final rings = ((e['overrides'] as Map?)?['rings'] as List?) ?? const [];
+        vegetationCuts[osmId] = [for (final ring in rings) _lngLatList(ring)];
+      }
+    }
+    version++;
   }
 }
 

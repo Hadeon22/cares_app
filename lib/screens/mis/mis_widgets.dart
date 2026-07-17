@@ -273,6 +273,85 @@ class TimelineItem extends StatelessWidget {
   }
 }
 
+/// One label/value line in a detail dialog. [value] wraps; a null/empty
+/// value renders an em dash.
+class MisDetailRow extends StatelessWidget {
+  const MisDetailRow(this.label, this.value, {super.key});
+  final String label;
+  final String? value;
+
+  @override
+  Widget build(BuildContext context) {
+    final text = Theme.of(context).textTheme;
+    final v = (value == null || value!.isEmpty) ? '—' : value!;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 108,
+            child: Text(label,
+                style: text.bodySmall?.copyWith(color: AppColors.inkMuted)),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(v,
+                textAlign: TextAlign.right,
+                style: text.bodyMedium?.copyWith(
+                    fontWeight: FontWeight.w600, color: AppColors.ink)),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Read-only detail dialog for a record — the shared "tap a row to see the
+/// full record" view used across the MIS module pages. [rows] are
+/// (label, value) pairs; [extra] can add non-row content (e.g. a long
+/// narration block); [actions] are the dialog's buttons (a Close is added).
+void showMisDetailSheet(
+  BuildContext context, {
+  required String title,
+  Widget? badge,
+  required List<(String, String?)> rows,
+  List<Widget> extra = const [],
+  List<Widget> actions = const [],
+}) {
+  showDialog<void>(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: badge == null
+          ? Text(title)
+          : Row(
+              children: [
+                Expanded(child: Text(title)),
+                const SizedBox(width: 8),
+                badge,
+              ],
+            ),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            for (final (label, value) in rows) MisDetailRow(label, value),
+            ...extra,
+          ],
+        ),
+      ),
+      actions: [
+        ...actions,
+        FilledButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Close'),
+        ),
+      ],
+    ),
+  );
+}
+
 /// Empty-state box (web .resident-empty).
 class EmptyState extends StatelessWidget {
   const EmptyState(this.message, {super.key});

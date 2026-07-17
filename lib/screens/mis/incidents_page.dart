@@ -15,6 +15,38 @@ import 'mis_widgets.dart';
 class IncidentsPage extends StatelessWidget {
   const IncidentsPage({super.key});
 
+  /// Full blotter entry — the record + narration, opened by tapping a card.
+  void _viewIncident(BuildContext context, IncidentReport r) {
+    final loc = MaterialLocalizations.of(context);
+    final text = Theme.of(context).textTheme;
+    showMisDetailSheet(
+      context,
+      title: r.caseNo,
+      badge: StatusBadge(
+        r.resolved ? 'Resolved' : 'Active',
+        kind: r.resolved ? BadgeKind.success : BadgeKind.danger,
+      ),
+      rows: [
+        ('Type', r.typeLabel),
+        ('Complainant', r.complainant),
+        ('Contact', r.contact),
+        ('Respondent', r.respondent),
+        ('Witnesses', r.witnesses),
+        ('Location', r.location),
+        ('Filed By', r.isOfficial ? 'Barangay Official' : 'Resident'),
+        ('Filed', loc.formatMediumDate(r.createdAt)),
+      ],
+      extra: [
+        const SizedBox(height: AppSpacing.sm),
+        Text('Narration',
+            style: text.bodySmall?.copyWith(color: AppColors.inkMuted)),
+        const SizedBox(height: 2),
+        Text(r.narration.isEmpty ? '—' : r.narration,
+            style: text.bodyMedium?.copyWith(color: AppColors.ink, height: 1.4)),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final store = IncidentStore.instance;
@@ -71,11 +103,16 @@ class IncidentsPage extends StatelessWidget {
                           Container(
                             margin:
                                 const EdgeInsets.only(bottom: AppSpacing.sm),
-                            padding: const EdgeInsets.all(AppSpacing.sm + 4),
                             decoration: BoxDecoration(
                               color: AppColors.cream,
                               borderRadius: BorderRadius.circular(AppRadii.sm),
                             ),
+                            clipBehavior: Clip.antiAlias,
+                            child: InkWell(
+                              // Tap to see the full blotter entry + narration.
+                              onTap: () => _viewIncident(context, r),
+                              child: Padding(
+                            padding: const EdgeInsets.all(AppSpacing.sm + 4),
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
@@ -164,6 +201,8 @@ class IncidentsPage extends StatelessWidget {
                                   ],
                                 ),
                               ],
+                            ),
+                            ),
                             ),
                           ),
                       ],

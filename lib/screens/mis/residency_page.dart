@@ -127,11 +127,25 @@ class _ResidencyPageState extends State<ResidencyPage> {
                 for (final r in rows)
                   Container(
                     margin: const EdgeInsets.only(bottom: AppSpacing.sm),
-                    padding: const EdgeInsets.all(AppSpacing.sm + 4),
                     decoration: BoxDecoration(
                       color: AppColors.cream,
                       borderRadius: BorderRadius.circular(AppRadii.sm),
                     ),
+                    clipBehavior: Clip.antiAlias,
+                    child: InkWell(
+                      // Tap the row to open the full resident profile.
+                      onTap: r.id == null
+                          ? null
+                          : () {
+                              showResidentDetailSheet(context, r.id!);
+                              AuditLog.instance.log(
+                                'RESIDENT_VIEW',
+                                'Viewed resident profile: ${r.name} (#${r.id})',
+                                category: AuditCategory.system,
+                              );
+                            },
+                      child: Padding(
+                    padding: const EdgeInsets.all(AppSpacing.sm + 4),
                     child: Row(
                       children: [
                         Expanded(
@@ -167,26 +181,14 @@ class _ResidencyPageState extends State<ResidencyPage> {
                         TextButton(
                           onPressed: r.id == null
                               ? null
-                              : () {
-                                  showResidentDetailSheet(context, r.id!);
-                                  AuditLog.instance.log(
-                                    'RESIDENT_VIEW',
-                                    'Viewed resident profile: ${r.name} '
-                                        '(#${r.id})',
-                                    category: AuditCategory.system,
-                                  );
-                                },
-                          child: const Text('View'),
-                        ),
-                        TextButton(
-                          onPressed: r.id == null
-                              ? null
                               : () => _openForm(residentId: r.id),
                           style: TextButton.styleFrom(
                               foregroundColor: AppColors.goldDeep),
                           child: const Text('Edit'),
                         ),
                       ],
+                    ),
+                    ),
                     ),
                   ),
             ],
