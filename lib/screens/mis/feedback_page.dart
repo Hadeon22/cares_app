@@ -2,16 +2,48 @@ import 'package:flutter/material.dart';
 
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_constants.dart';
+import '../../data/session.dart';
 import '../../data/stores.dart';
 import '../../screens/services/feedback_screen.dart';
+import '../../widgets/app_toast.dart';
 import '../../widgets/charts.dart';
 import '../../widgets/form_widgets.dart';
+import '../../widgets/paginator.dart';
 import 'mis_widgets.dart';
 
 /// Feedback Management module (js/pages/feedback.js) — sentiment KPIs,
 /// category breakdown, and the recent feedback list from the shared store.
 class FeedbackPage extends StatelessWidget {
   const FeedbackPage({super.key});
+
+  /// Permanently delete a feedback entry (gated by Delete Permissions).
+  Future<void> _delete(BuildContext context, FeedbackEntry f) async {
+    final ok = await confirmDelete(
+      context,
+      title: 'Delete feedback?',
+      message: 'This permanently removes ${f.name}\'s feedback entry. '
+          'This cannot be undone.',
+    );
+    if (!ok || !context.mounted) return;
+    try {
+      await FeedbackStore.instance
+          .delete(f, accountId: AppSession.instance.accountId);
+    } catch (e) {
+      if (context.mounted) {
+        showAppToast(context, e.toString(), icon: Icons.error_outline);
+      }
+      return;
+    }
+    AuditLog.instance.log(
+      'FEEDBACK_DELETE',
+      'Feedback from ${f.name} deleted',
+      level: AuditLevel.warning,
+      category: AuditCategory.feedback,
+    );
+    if (context.mounted) {
+      showAppToast(context, 'Feedback deleted', icon: Icons.delete_outline);
+    }
+  }
 
   /// Full feedback entry — opened by tapping a card.
   void _viewFeedback(BuildContext context, FeedbackEntry f) {
@@ -44,10 +76,12 @@ class FeedbackPage extends StatelessWidget {
   Widget build(BuildContext context) {
     final store = FeedbackStore.instance;
     store.ensureLoaded();
+    DeletePermissions.instance.ensureLoaded();
     return AnimatedBuilder(
-      animation: store,
+      animation: Listenable.merge([store, DeletePermissions.instance]),
       builder: (context, _) {
         final all = store.all;
+        final canDelete = canDeleteModule('feedback');
         final total = all.length;
         final avg =
             total == 0 ? 0.0 : all.fold<int>(0, (s, f) => s + f.rating) / total;
@@ -134,9 +168,10 @@ class FeedbackPage extends StatelessWidget {
                           ? const EmptyState(
                               'No feedback submitted yet. Submissions from '
                               'residents will appear here.')
-                  : Column(
-                      children: [
-                        for (final f in all)
+                  : PaginatedColumn<FeedbackEntry>(
+                      items: all,
+                      itemLabel: 'entry',
+                      itemBuilder: (context, f) =>
                           Container(
                             width: double.infinity,
                             margin:
@@ -151,7 +186,11 @@ class FeedbackPage extends StatelessWidget {
                               onTap: () => _viewFeedback(context, f),
                               child: Padding(
                             padding: const EdgeInsets.all(AppSpacing.sm + 4),
-                            child: Column(
+                            child: Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Expanded(
+                                  child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Wrap(
@@ -191,11 +230,17 @@ class FeedbackPage extends StatelessWidget {
                                     style: text.bodySmall?.copyWith(
                                         color: AppColors.ink, height: 1.45)),
                               ],
+                                  ),
+                                ),
+                                if (canDelete)
+                                  DeleteIconButton(
+                                    onPressed: () => _delete(context, f),
+                                  ),
+                              ],
                             ),
                             ),
                             ),
                           ),
-                      ],
                     ),
             ),
           ],

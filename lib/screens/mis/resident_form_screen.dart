@@ -6,6 +6,7 @@ import '../../data/api_client.dart';
 import '../../data/stores.dart';
 import '../../widgets/app_toast.dart';
 import '../../widgets/form_widgets.dart';
+import '../../widgets/photo_picker.dart';
 
 /// Add / Edit Resident — the mobile version of the web residency page's
 /// modal-add-resident (js/pages/residency.js). One screen, two modes:
@@ -39,6 +40,13 @@ class _ResidentFormScreenState extends State<ResidentFormScreen> {
   final _occupation = TextEditingController();
 
   DateTime? _birthdate;
+
+  /// Profile photo as a base64 data URL; [_photoDirty] tracks whether the
+  /// user changed it, so PUT only sends `photo` when it actually changed
+  /// ('' = remove, per the server's clear semantics).
+  String? _photo;
+  bool _photoDirty = false;
+
   String _sex = '';
   String _civil = '';
   String _voter = '';
@@ -123,6 +131,7 @@ class _ResidentFormScreenState extends State<ResidentFormScreen> {
         _contact.text = (j['contact_no'] ?? '') as String? ?? '';
         _occupation.text = (j['occupation'] ?? '') as String? ?? '';
         _birthdate = DateTime.tryParse(j['birthdate']?.toString() ?? '');
+        _photo = j['photo'] as String?;
         _sex = (j['sex'] as String?) ?? '';
         _civil = (j['civil_status'] as String?) ?? '';
         _voter = (j['voter_status'] as String?) ?? '';
@@ -186,6 +195,8 @@ class _ResidentFormScreenState extends State<ResidentFormScreen> {
       'voter_status': _voter.isEmpty || _voter == '—' ? null : _voter,
       'household_id': _householdId,
       'classifications': _classifications.toList(),
+      // Only send the photo when it changed; '' clears it on the server.
+      if (_photoDirty) 'photo': _photo ?? '',
     };
 
     setState(() => _busy = true);
@@ -230,6 +241,17 @@ class _ResidentFormScreenState extends State<ResidentFormScreen> {
                 if (_loadError != null)
                   AlertBanner(
                       kind: AlertKind.danger, child: Text(_loadError!)),
+                ResidentPhotoPicker(
+                  photo: _photo,
+                  initials:
+                      '${_first.text.isNotEmpty ? _first.text[0] : '?'}'
+                      '${_last.text.isNotEmpty ? _last.text[0] : ''}',
+                  onChanged: (p) => setState(() {
+                    _photo = p;
+                    _photoDirty = true;
+                  }),
+                ),
+                const SizedBox(height: AppSpacing.md),
                 Row(
                   children: [
                     Expanded(

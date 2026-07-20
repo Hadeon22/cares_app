@@ -18,6 +18,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     'certificate': Icons.description_outlined,
     'message': Icons.mail_outline,
     'system': Icons.info_outline,
+    'announcement': Icons.campaign_outlined,
   };
 
   @override
@@ -49,7 +50,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    const Icon(Icons.cloud_off_outlined,
+                    Icon(Icons.cloud_off_outlined,
                         size: 44, color: AppColors.inkMuted),
                     const SizedBox(height: AppSpacing.md),
                     Text('Could not load notifications',
@@ -75,7 +76,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    const Icon(Icons.notifications_none,
+                    Icon(Icons.notifications_none,
                         size: 44, color: AppColors.inkMuted),
                     const SizedBox(height: AppSpacing.md),
                     Text('Nothing here yet',
@@ -148,7 +149,10 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                             const SizedBox(height: 4),
                             Text(
                               [
-                                if (n.ref.isNotEmpty) n.ref,
+                                // Announcements carry an internal id (ANN-…)
+                                // that shouldn't surface next to the date.
+                                if (n.ref.isNotEmpty && n.kind != 'announcement')
+                                  n.ref,
                                 MaterialLocalizations.of(context)
                                     .formatMediumDate(n.createdAt),
                               ].join(' · '),

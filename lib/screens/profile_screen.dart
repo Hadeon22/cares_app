@@ -2,15 +2,18 @@ import 'package:flutter/material.dart';
 
 import '../core/constants/app_colors.dart';
 import '../core/constants/app_constants.dart';
+import '../core/i18n/app_text.dart';
 import '../core/utils/fade_slide.dart';
 import '../data/session.dart';
 import '../widgets/app_toast.dart';
+import '../widgets/photo_picker.dart';
 import '../widgets/pull_to_refresh.dart';
 import 'login_screen.dart';
 import 'profile/activity_history_screen.dart';
 import 'profile/my_info_screen.dart';
 import 'profile/my_requests_screen.dart';
 import 'profile/notifications_screen.dart';
+import 'profile/settings_screen.dart';
 
 /// Profile tab: identity card + account actions, driven by the active
 /// session (web: nav user pill + dropdown).
@@ -59,18 +62,7 @@ class ProfileScreen extends StatelessWidget {
             ),
             child: Row(
               children: [
-                CircleAvatar(
-                  radius: 30,
-                  backgroundColor: AppColors.gold,
-                  child: Text(
-                    session.initials,
-                    style: const TextStyle(
-                      color: AppColors.navyDeep,
-                      fontWeight: FontWeight.w900,
-                      fontSize: 20,
-                    ),
-                  ),
-                ),
+                const SessionAvatar(radius: 30),
                 const SizedBox(width: AppSpacing.md),
                 Expanded(
                   child: Column(
@@ -102,26 +94,26 @@ class ProfileScreen extends StatelessWidget {
             children: [
               _ProfileTile(
                 icon: Icons.badge_outlined,
-                title: 'My Information',
-                subtitle: 'View your account & barangay record',
+                title: L.text.myInformation,
+                subtitle: L.text.myInformationSub,
                 onTap: () => push(const MyInfoScreen()),
               ),
               _ProfileTile(
                 icon: Icons.receipt_long_outlined,
-                title: 'My Requests',
-                subtitle: 'Track certificates & clearances',
+                title: L.text.myRequests,
+                subtitle: L.text.myRequestsSub,
                 onTap: () => push(const MyRequestsScreen()),
               ),
               _ProfileTile(
                 icon: Icons.history,
-                title: 'Activity History',
-                subtitle: 'Reports filed & feedback given',
+                title: L.text.activityHistory,
+                subtitle: L.text.activityHistorySub,
                 onTap: () => push(const ActivityHistoryScreen()),
               ),
               _ProfileTile(
                 icon: Icons.notifications_outlined,
-                title: 'Notifications',
-                subtitle: 'Advisories & request updates',
+                title: L.text.notifications,
+                subtitle: L.text.notificationsSub,
                 onTap: () => push(const NotificationsScreen()),
               ),
             ],
@@ -132,17 +124,19 @@ class ProfileScreen extends StatelessWidget {
           delay: const Duration(milliseconds: 220),
           child: _ActionGroup(
             children: [
-              const _ProfileTile(
-                  icon: Icons.settings_outlined,
-                  title: 'Settings',
-                  subtitle: 'Language, privacy & security'),
-              const _ProfileTile(
+              _ProfileTile(
+                icon: Icons.settings_outlined,
+                title: L.text.settings,
+                subtitle: L.text.settingsSub,
+                onTap: () => push(const SettingsScreen()),
+              ),
+              _ProfileTile(
                   icon: Icons.help_outline,
-                  title: 'Help & Support',
+                  title: L.text.helpSupport,
                   subtitle: AppStrings.hotline),
               _ProfileTile(
                 icon: Icons.logout,
-                title: 'Sign Out',
+                title: L.text.signOut,
                 subtitle: '',
                 destructive: true,
                 onTap: () {
@@ -252,7 +246,11 @@ class _ProfileTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color = destructive ? AppColors.flagRed : AppColors.navy;
+    // Navy has no contrast left on a dark surface — gold carries the brand
+    // there instead.
+    final color = destructive
+        ? AppColors.flagRed
+        : (AppColors.isDark ? AppColors.gold : AppColors.navy);
     return ListTile(
       onTap: onTap ?? () {},
       leading: Container(
@@ -278,7 +276,7 @@ class _ProfileTile extends StatelessWidget {
                   .bodySmall
                   ?.copyWith(color: AppColors.inkMuted)),
       trailing:
-          const Icon(Icons.chevron_right, color: AppColors.inkMuted, size: 20),
+          Icon(Icons.chevron_right, color: AppColors.inkMuted, size: 20),
     );
   }
 }

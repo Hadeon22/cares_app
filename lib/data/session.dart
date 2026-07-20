@@ -73,6 +73,11 @@ class AppSession extends ChangeNotifier {
   int? get accountId => _accountId;
   int? get residentId => _residentId;
 
+  /// The signed-in resident's profile photo (base64 data URL) — kept fresh
+  /// by [ResidentProfile.fetch] whenever the session's own record loads, so
+  /// every avatar (navbar, profile header, drawer) shows the same picture.
+  final ValueNotifier<String?> photoNotifier = ValueNotifier<String?>(null);
+
   /// First two words of the display name (web: shortName).
   String get shortName =>
       _displayName.split(' ').take(2).join(' ');
@@ -186,6 +191,16 @@ class AppSession extends ChangeNotifier {
       _user = (j['user'] as String?) ?? '';
       _accountId = j['account_id'] as int?;
       _residentId = j['resident_id'] as int?;
+      // Re-warm the resident record (cache-backed offline) so the avatars
+      // get the profile photo without waiting for a profile visit.
+      final rid = _residentId;
+      if (rid != null) {
+        unawaited(() async {
+          try {
+            await ResidentProfile.fetch(rid);
+          } catch (_) {}
+        }());
+      }
       notifyListeners();
     } catch (_) {
       /* unreadable session — start signed out */
@@ -228,6 +243,7 @@ class AppSession extends ChangeNotifier {
     _user = '';
     _accountId = null;
     _residentId = null;
+    photoNotifier.value = null;
     NotificationStore.instance.reset();
     notifyListeners();
   }

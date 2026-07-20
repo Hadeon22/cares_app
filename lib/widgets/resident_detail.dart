@@ -4,6 +4,7 @@ import '../core/constants/app_colors.dart';
 import '../core/constants/app_constants.dart';
 import '../data/resident_profile.dart';
 import 'form_widgets.dart';
+import 'photo_picker.dart';
 
 /// Full resident profile — mobile twin of the web's View-Resident modal
 /// (js/pages/residency.js renderResidentDetail): header with name + status
@@ -27,17 +28,11 @@ class ResidentDetailView extends StatelessWidget {
       children: [
         Row(
           children: [
-            CircleAvatar(
+            ResidentAvatar(
               radius: 24,
-              backgroundColor: AppColors.gold,
-              child: Text(
-                '${r.firstName.isNotEmpty ? r.firstName[0] : '?'}'
-                '${r.lastName.isNotEmpty ? r.lastName[0] : ''}',
-                style: const TextStyle(
-                  color: AppColors.navyDeep,
-                  fontWeight: FontWeight.w900,
-                ),
-              ),
+              photo: r.photo,
+              initials: '${r.firstName.isNotEmpty ? r.firstName[0] : '?'}'
+                  '${r.lastName.isNotEmpty ? r.lastName[0] : ''}',
             ),
             const SizedBox(width: AppSpacing.md),
             Expanded(
@@ -95,7 +90,7 @@ class ResidentDetailView extends StatelessWidget {
     final text = Theme.of(context).textTheme;
     return Container(
       padding: const EdgeInsets.symmetric(vertical: 8),
-      decoration: const BoxDecoration(
+      decoration: BoxDecoration(
         border: Border(bottom: BorderSide(color: AppColors.divider)),
       ),
       child: Row(

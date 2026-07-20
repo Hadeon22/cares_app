@@ -5,6 +5,7 @@ import '../../core/constants/app_constants.dart';
 import '../../data/resident_profile.dart';
 import '../../data/session.dart';
 import '../../widgets/resident_detail.dart';
+import 'edit_request_screen.dart';
 
 /// "My Information" — the signed-in user's own record: account details plus,
 /// for residents, the full barangay record (same fields as the web's
@@ -75,6 +76,12 @@ class _MyInfoScreenState extends State<MyInfoScreen> {
                                 ?.copyWith(color: AppColors.flagRed)),
                         const SizedBox(height: AppSpacing.sm),
                         OutlinedButton(
+                          // Navy on light — the theme's outlined style is
+                          // for navy backdrops and is invisible here.
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: AppColors.navy,
+                            side: const BorderSide(color: AppColors.navy),
+                          ),
                           onPressed: () =>
                               setState(() => _future = _load()),
                           child: const Text('Retry'),
@@ -94,7 +101,34 @@ class _MyInfoScreenState extends State<MyInfoScreen> {
                 return _sectionCard(
                   context,
                   title: 'Barangay Record',
-                  child: ResidentDetailView(profile: snap.data!),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      ResidentDetailView(profile: snap.data!),
+                      const SizedBox(height: AppSpacing.md),
+                      // Residents can't edit the record directly — changes
+                      // go through an edit request that staff approve.
+                      // Filled gold (the app's primary button) — the theme's
+                      // OutlinedButton is styled for navy backdrops and
+                      // disappears on this cream card.
+                      FilledButton.icon(
+                        onPressed: () async {
+                          final submitted =
+                              await Navigator.of(context).push<bool>(
+                            MaterialPageRoute(
+                              builder: (_) =>
+                                  EditRequestScreen(profile: snap.data!),
+                            ),
+                          );
+                          if (submitted == true && mounted) {
+                            setState(() => _future = _load());
+                          }
+                        },
+                        icon: const Icon(Icons.edit_outlined, size: 18),
+                        label: const Text('Request Profile Edit'),
+                      ),
+                    ],
+                  ),
                 );
               },
             ),
@@ -132,7 +166,7 @@ class _MyInfoScreenState extends State<MyInfoScreen> {
     final text = Theme.of(context).textTheme;
     return Container(
       padding: const EdgeInsets.symmetric(vertical: 8),
-      decoration: const BoxDecoration(
+      decoration: BoxDecoration(
         border: Border(bottom: BorderSide(color: AppColors.divider)),
       ),
       child: Row(

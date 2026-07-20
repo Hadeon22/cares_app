@@ -152,10 +152,15 @@ class GisMapView extends StatefulWidget {
     this.typeFilter,
     this.filters = const GisMapFilters(),
     this.showReportPins = true,
+    this.initialPick,
   });
 
   /// Pick mode: called with the normalized tap position.
   final ValueChanged<Offset>? onPick;
+
+  /// Pick mode: a normalized point to show as the dropped pin when the map
+  /// first appears (so an already-chosen location is drawn, not just tapped).
+  final Offset? initialPick;
 
   /// View mode: called when an incident pin is tapped.
   final ValueChanged<IncidentReport>? onPinTap;
@@ -200,7 +205,7 @@ class _GisMapViewState extends State<GisMapView> {
   static const double _maxUserZoom = 60;
 
   final _controller = TransformationController();
-  Offset? _picked; // normalized
+  late Offset? _picked = widget.initialPick; // normalized
 
   /// One-time apply of [GisMapView.focusPoint] (blotter "View on Map").
   bool _focusApplied = false;

@@ -4,11 +4,13 @@ import 'package:flutter/material.dart';
 
 import '../core/constants/app_colors.dart';
 import '../core/constants/app_constants.dart';
+import '../core/i18n/app_text.dart';
 import '../data/api_client.dart';
 import '../data/session.dart';
 import '../data/stores.dart';
 import '../widgets/common.dart';
 import '../widgets/offline_banner.dart';
+import '../widgets/photo_picker.dart';
 import 'gis_map_screen.dart';
 import 'home_screen.dart';
 import 'login_screen.dart';
@@ -233,18 +235,7 @@ class _MainShellState extends State<MainShell> {
                     ),
                   ),
                 ],
-                child: CircleAvatar(
-                  radius: 16,
-                  backgroundColor: AppColors.gold,
-                  child: Text(
-                    session.initials,
-                    style: const TextStyle(
-                      color: AppColors.navyDeep,
-                      fontWeight: FontWeight.w900,
-                      fontSize: 12,
-                    ),
-                  ),
-                ),
+                child: const SessionAvatar(radius: 16),
               ),
             ),
           ] else
@@ -298,20 +289,20 @@ class _MainShellState extends State<MainShell> {
         onDestinationSelected: (dest) =>
             _onNavTap(session.role?.isStaff ?? false, dest),
         destinations: [
-          const NavigationDestination(
-            icon: Icon(Icons.home_outlined),
-            selectedIcon: Icon(Icons.home),
-            label: 'Home',
+          NavigationDestination(
+            icon: const Icon(Icons.home_outlined),
+            selectedIcon: const Icon(Icons.home),
+            label: L.text.navHome,
           ),
-          const NavigationDestination(
-            icon: Icon(Icons.grid_view_outlined),
-            selectedIcon: Icon(Icons.grid_view_rounded),
-            label: 'Services',
+          NavigationDestination(
+            icon: const Icon(Icons.grid_view_outlined),
+            selectedIcon: const Icon(Icons.grid_view_rounded),
+            label: L.text.navServices,
           ),
-          const NavigationDestination(
-            icon: Icon(Icons.map_outlined),
-            selectedIcon: Icon(Icons.map),
-            label: 'GIS Map',
+          NavigationDestination(
+            icon: const Icon(Icons.map_outlined),
+            selectedIcon: const Icon(Icons.map),
+            label: L.text.navGisMap,
           ),
           // MIS (staff only) sits just before Profile, so Profile stays the
           // rightmost destination for everyone.
@@ -321,10 +312,10 @@ class _MainShellState extends State<MainShell> {
               selectedIcon: Icon(Icons.space_dashboard),
               label: 'MIS',
             ),
-          const NavigationDestination(
-            icon: Icon(Icons.person_outline),
-            selectedIcon: Icon(Icons.person),
-            label: 'Profile',
+          NavigationDestination(
+            icon: const Icon(Icons.person_outline),
+            selectedIcon: const Icon(Icons.person),
+            label: L.text.navProfile,
           ),
         ],
       ),

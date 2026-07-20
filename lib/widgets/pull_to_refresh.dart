@@ -15,6 +15,10 @@ Future<void> refreshLoadedStores() async {
     GisStateStore.instance,
     NotificationStore.instance,
     AuditLog.instance,
+    AnnouncementStore.instance,
+    OfficialStore.instance,
+    DashboardStats.instance,
+    AnalyticsStats.instance,
   ];
   await Future.wait([
     for (final s in stores)

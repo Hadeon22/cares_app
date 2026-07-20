@@ -40,6 +40,7 @@ class AppTextField extends StatelessWidget {
     this.helper,
     this.onTap,
     this.onChanged,
+    this.suffix,
   });
 
   final String label;
@@ -52,6 +53,10 @@ class AppTextField extends StatelessWidget {
   final String? helper;
   final VoidCallback? onTap;
   final ValueChanged<String>? onChanged;
+
+  /// Trailing widget inside the field — e.g. a show/hide toggle on a
+  /// password input.
+  final Widget? suffix;
 
   @override
   Widget build(BuildContext context) {
@@ -72,6 +77,7 @@ class AppTextField extends StatelessWidget {
             helperText: helper,
             filled: true,
             fillColor: readOnly ? AppColors.cream : AppColors.surface,
+            suffixIcon: suffix,
           ),
         ),
         const SizedBox(height: AppSpacing.md),

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../core/constants/app_colors.dart';
 import '../core/constants/app_constants.dart';
+import '../core/i18n/app_text.dart';
 
 /// What tapping a service card opens (mirrors openServicePopup on the web).
 enum ServiceAction {
@@ -33,38 +34,40 @@ class ServiceItem {
   final Color accent;
   final bool isEmergency;
 
-  static const List<ServiceItem> catalog = [
-    ServiceItem(
-      title: 'Barangay Residency',
-      subtitle: 'Search and view resident records and purok listings',
-      icon: Icons.holiday_village_outlined,
-      action: ServiceAction.residency,
-      accent: Color(0xFF3B82F6), // sc-blue
-    ),
-    ServiceItem(
-      title: 'Certificate Issuance',
-      subtitle: 'Request clearances, indigency, residency & more',
-      icon: Icons.description_outlined,
-      action: ServiceAction.certificates,
-      accent: AppColors.goldDeep, // sc-gold
-    ),
-    ServiceItem(
-      title: 'Blotter Reporting',
-      subtitle: 'File an incident report for complaints or concerns',
-      icon: Icons.campaign_outlined,
-      action: ServiceAction.incidents,
-      accent: AppColors.flagRed, // sc-red
-    ),
-    ServiceItem(
-      title: 'Feedback',
-      subtitle: 'Share comments and suggestions on barangay services',
-      icon: Icons.chat_bubble_outline,
-      action: ServiceAction.feedback,
-      accent: AppColors.success, // sc-green
-    ),
-    // GIS Map and Account Claiming are reachable from the GIS tab and
-    // the sign-in screen respectively, so they're not repeated here.
-  ];
+  /// Built per-call rather than held as a `const` list, because the titles
+  /// come from [L] and must follow the language toggle in Settings.
+  /// GIS Map and Account Claiming are reachable from the GIS tab and the
+  /// sign-in screen respectively, so they're not repeated here.
+  static List<ServiceItem> get catalog => [
+        ServiceItem(
+          title: L.text.svcResidency,
+          subtitle: L.text.svcResidencySub,
+          icon: Icons.holiday_village_outlined,
+          action: ServiceAction.residency,
+          accent: const Color(0xFF3B82F6), // sc-blue
+        ),
+        ServiceItem(
+          title: L.text.svcCertificates,
+          subtitle: L.text.svcCertificatesSub,
+          icon: Icons.description_outlined,
+          action: ServiceAction.certificates,
+          accent: AppColors.goldDeep, // sc-gold
+        ),
+        ServiceItem(
+          title: L.text.svcIncidents,
+          subtitle: L.text.svcIncidentsSub,
+          icon: Icons.campaign_outlined,
+          action: ServiceAction.incidents,
+          accent: AppColors.flagRed, // sc-red
+        ),
+        ServiceItem(
+          title: L.text.svcFeedback,
+          subtitle: L.text.svcFeedbackSub,
+          icon: Icons.chat_bubble_outline,
+          action: ServiceAction.feedback,
+          accent: AppColors.success, // sc-green
+        ),
+      ];
 }
 
 /// A quick-info chip (hotline, hours, address, population).
@@ -79,77 +82,68 @@ class InfoItem {
   final String value;
   final IconData icon;
 
-  static const List<InfoItem> items = [
-    InfoItem(
-      label: 'Barangay Hotline',
-      value: AppStrings.hotline,
-      icon: Icons.call_outlined,
-    ),
-    InfoItem(
-      label: 'Office Hours',
-      value: AppStrings.officeHours,
-      icon: Icons.schedule_outlined,
-    ),
-    InfoItem(
-      label: 'Address',
-      value: AppStrings.address,
-      icon: Icons.location_on_outlined,
-    ),
-    InfoItem(
-      label: 'Population',
-      value: AppStrings.population,
-      icon: Icons.diversity_3_outlined,
-    ),
-  ];
+  /// Labels follow the language toggle; the values are numbers and proper
+  /// nouns, so they stay identical in both languages.
+  static List<InfoItem> get items => [
+        InfoItem(
+          label: L.text.infoHotline,
+          value: AppStrings.hotline,
+          icon: Icons.call_outlined,
+        ),
+        InfoItem(
+          label: L.text.infoHours,
+          value: AppStrings.officeHours,
+          icon: Icons.schedule_outlined,
+        ),
+        InfoItem(
+          label: L.text.infoAddress,
+          value: AppStrings.address,
+          icon: Icons.location_on_outlined,
+        ),
+        InfoItem(
+          label: L.text.infoPopulation,
+          value: AppStrings.population,
+          icon: Icons.diversity_3_outlined,
+        ),
+      ];
 }
 
-/// A community announcement card.
+/// Allowed announcement tags → chip color (kept in sync with the TAGS list
+/// in the server's routes/announcements.js).
+const Map<String, Color> kAnnouncementTagColors = {
+  'Advisory': AppColors.goldDeep,
+  'Health': AppColors.success,
+  'Community': AppColors.royalBlue,
+  'Event': Color(0xFF8B5CF6),
+  'Emergency': AppColors.flagRed,
+};
+
+/// A community announcement card (announcement table, /api/announcements).
 class Announcement {
   const Announcement({
+    this.id,
     required this.title,
     required this.body,
-    required this.date,
     required this.tag,
-    this.tagColor = AppColors.royalBlue,
+    required this.createdAt,
   });
 
+  final int? id;
   final String title;
   final String body;
-  final String date;
   final String tag;
-  final Color tagColor;
+  final DateTime createdAt;
+
+  Color get tagColor =>
+      kAnnouncementTagColors[tag] ?? AppColors.royalBlue;
 
   factory Announcement.fromJson(Map<String, dynamic> json) => Announcement(
-        title: json['title'] as String,
+        id: json['id'] as int?,
+        title: (json['title'] ?? '') as String,
         body: json['body'] as String? ?? '',
-        date: json['date'] as String? ?? '',
         tag: json['tag'] as String? ?? 'Advisory',
+        createdAt:
+            DateTime.tryParse(json['created_at']?.toString() ?? '')?.toLocal() ??
+                DateTime.now(),
       );
-
-  /// Placeholder data — replace with `GET /api/announcements`.
-  static const List<Announcement> latest = [
-    Announcement(
-      title: 'Free Anti-Rabies Vaccination Drive',
-      body: 'Bring your pets to the covered court this Saturday, '
-          '8:00 AM–12:00 NN. First 150 pets only.',
-      date: 'Jul 9, 2026',
-      tag: 'Health',
-      tagColor: AppColors.success,
-    ),
-    Announcement(
-      title: 'Scheduled Power Interruption',
-      body: 'BATELEC II advises a scheduled maintenance outage on '
-          'Jul 14, 9:00 AM–3:00 PM affecting Purok 2 & 3.',
-      date: 'Jul 8, 2026',
-      tag: 'Advisory',
-      tagColor: AppColors.goldDeep,
-    ),
-    Announcement(
-      title: 'Barangay Assembly — 3rd Quarter',
-      body: 'All residents are invited to the quarterly assembly at the '
-          'Barangay Hall grounds on Jul 26, 4:00 PM.',
-      date: 'Jul 5, 2026',
-      tag: 'Community',
-    ),
-  ];
 }

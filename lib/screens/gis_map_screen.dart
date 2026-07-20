@@ -202,13 +202,56 @@ class _GisMapScreenState extends State<GisMapScreen> {
   /// filter row (Map Layers, Building Type, Household Classification).
   GisMapFilters _filters = const GisMapFilters();
 
-  /// True while a finger is down on the map. The page scroll is disabled
-  /// then, so dragging on the map pans/zooms it (and never scrolls the
-  /// page); dragging anywhere else scrolls the page normally.
-  bool _mapInteracting = false;
+  /// The map is a collapsing header: it lives OUTSIDE the scroll view (so its
+  /// InteractiveViewer owns pan/zoom/tap with no tug-of-war), but its height
+  /// is driven by how far the content list below has been scrolled. Scroll the
+  /// reports up and the map shrinks toward [_minMapH]; scroll back and it grows
+  /// to [_maxMapH]. Because the map never participates in the scroll gesture,
+  /// panning stays reliable while the old "scroll it away" feel is restored.
+  final ScrollController _scrollController = ScrollController();
+  final ValueNotifier<double> _mapHeight = ValueNotifier<double>(0);
+  double _maxMapH = 0;
+  double _minMapH = 0;
+  bool _mapHeightInit = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _scrollController.addListener(_onContentScroll);
+  }
+
+  /// Map the content-list scroll offset onto the header height: the first
+  /// (_maxMapH − _minMapH) pixels of scroll shrink the map, one-for-one.
+  void _onContentScroll() {
+    if (!_scrollController.hasClients) return;
+    final off = _scrollController.position.pixels;
+    final h = (_maxMapH - off).clamp(_minMapH, _maxMapH);
+    if ((_mapHeight.value - h).abs() > 0.5) _mapHeight.value = h;
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Header bounds track the viewport (and re-derive on rotation). Expanded
+    // it's ~half the screen; collapsed it keeps a peek so the map stays
+    // tappable and never fully unmounts (which would lose the user's zoom).
+    final screenH = MediaQuery.sizeOf(context).height;
+    _maxMapH = screenH * 0.48;
+    _minMapH = screenH * 0.22;
+    if (!_mapHeightInit) {
+      _mapHeightInit = true;
+      _mapHeight.value = _maxMapH;
+    } else {
+      _mapHeight.value = _mapHeight.value.clamp(_minMapH, _maxMapH);
+      _onContentScroll();
+    }
+  }
 
   @override
   void dispose() {
+    _scrollController.removeListener(_onContentScroll);
+    _scrollController.dispose();
+    _mapHeight.dispose();
     _focus.dispose();
     super.dispose();
   }
@@ -427,30 +470,23 @@ class _GisMapScreenState extends State<GisMapScreen> {
   Widget build(BuildContext context) {
     final text = Theme.of(context).textTheme;
 
-    // Everything scrolls together: the map is no longer pinned, so pulling
-    // the page up scrolls it away to reveal the reports/AI panels. Page
-    // scroll is suppressed while a finger is on the map (see
-    // [_mapInteracting]) so map panning never fights the page scroll.
-    // Pull-to-refresh re-pulls the map data.
-    return RefreshIndicator(
-      onRefresh: () => _refreshMapData(context),
-      color: AppColors.navy,
-      child: ListView(
-        padding: EdgeInsets.zero,
-        physics: _mapInteracting
-            ? const NeverScrollableScrollPhysics()
-            : const AlwaysScrollableScrollPhysics(),
-        children: [
+    // The map is a COLLAPSING header above the reports/AI panels. Crucially it
+    // lives OUTSIDE the scroll view, so its InteractiveViewer owns pan/zoom/tap
+    // with no tug-of-war against the page scroll (the old bug: the map lived
+    // inside the ListView, so a one-finger drag was a fight it often lost for
+    // the first few tries). Instead of scrolling the map, the content list's
+    // scroll offset drives the header's height (see [_onContentScroll]) — pull
+    // the reports up and the map shrinks to a peek, pull down and it grows
+    // back. Pull-to-refresh (on that lower area) still re-pulls map data.
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
         // ── Above the map: the web filter row's controls ────────
         // Map Layers toggles + Building Type + Household Classification
-        // (js/gis-map.js filter row), plus refresh.
+        // (js/gis-map.js filter row).
         Padding(
           padding: const EdgeInsets.fromLTRB(
               AppSpacing.gutter, AppSpacing.sm + 4, AppSpacing.gutter, 0),
-          // All three filter controls in one row, sharing the same button
-          // style (matching the web map's filter row). Building Type /
-          // Classification show the current choice; an active filter is
-          // highlighted. (Reloading is handled by pull-to-refresh.)
           child: Row(
             children: [
               Expanded(
@@ -486,138 +522,152 @@ class _GisMapScreenState extends State<GisMapScreen> {
             ],
           ),
         ),
-        // ── Map ─────────────────────────────────────────────────
-        // Full-bleed to the screen edges; slightly taller than the
-        // boundary's true aspect so the map gets more breathing room —
-        // the fitted view stays the zoom-out limit either way. Wrapped in a
-        // Listener that turns off page scroll while the map is touched, so
-        // map panning wins over the page's scroll.
-        Listener(
-          onPointerDown: (_) {
-            if (!_mapInteracting) setState(() => _mapInteracting = true);
-          },
-          onPointerUp: (_) {
-            if (_mapInteracting) setState(() => _mapInteracting = false);
-          },
-          onPointerCancel: (_) {
-            if (_mapInteracting) setState(() => _mapInteracting = false);
-          },
-          child: Padding(
-            padding: const EdgeInsets.only(top: AppSpacing.sm + 4),
-            child: SizedBox(
-                // A fixed, generous height — the map view fits the whole
-                // barangay boundary into it. A concrete height (vs. an
-                // AspectRatio inside the scroll view) guarantees the map's
-                // own LayoutBuilder gets a finite viewport to fit against.
-                height: MediaQuery.sizeOf(context).height * 0.48,
-                child: Stack(
-                  children: [
-                    Container(
-                      clipBehavior: Clip.antiAlias,
-                      decoration: const BoxDecoration(
-                        border: Border.symmetric(
-                          horizontal: BorderSide(color: AppColors.divider),
-                        ),
-                      ),
-                      child: GisMapView(
-                        focusPoint: widget.focusPoint,
-                        focusRequest: _focus,
-                        filters: _filters,
-                        onPinTap: (r) =>
-                            GisMapScreen.showReportDialog(context, r),
-                        onTaggedBuildingTap: (tag) =>
-                            GisMapScreen.showBuildingDialog(context, tag),
-                        onFeatureTap: (info) =>
-                            GisMapScreen.showFeatureInfoDialog(context, info),
-                      ),
+        // ── Map (collapsing header) ─────────────────────────────
+        // Height driven by [_mapHeight] (the content-list scroll). Only the
+        // SizedBox rebuilds as it collapses — the map Stack is passed through
+        // as the builder's `child`, so it isn't rebuilt on every scroll frame.
+        // Because it is outside any scrollable, its InteractiveViewer claims
+        // pan/zoom/tap gestures unambiguously.
+        Padding(
+          padding: const EdgeInsets.only(top: AppSpacing.sm + 4),
+          child: ValueListenableBuilder<double>(
+            valueListenable: _mapHeight,
+            builder: (context, height, child) =>
+                SizedBox(height: height, child: child),
+            child: Stack(
+              children: [
+                Container(
+                  clipBehavior: Clip.antiAlias,
+                  decoration: BoxDecoration(
+                    border: Border.symmetric(
+                      horizontal: BorderSide(color: AppColors.divider),
                     ),
-                    // Compact, low-key "Report Incident" in the map's
-                    // bottom-right corner.
-                    Positioned(
-                      right: AppSpacing.sm,
-                      bottom: AppSpacing.sm,
-                      child: Material(
-                        color: AppColors.surface.withValues(alpha: 0.92),
-                        borderRadius: BorderRadius.circular(AppRadii.pill),
-                        elevation: 2,
-                        child: InkWell(
-                          borderRadius: BorderRadius.circular(AppRadii.pill),
-                          onTap: _openReportIncident,
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 12, vertical: 8),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                const Icon(Icons.campaign_outlined,
-                                    size: 16, color: AppColors.flagRed),
-                                const SizedBox(width: 5),
-                                Text(
-                                  'Report Incident',
-                                  style: Theme.of(context)
-                                      .textTheme
-                                      .labelSmall
-                                      ?.copyWith(
-                                          color: AppColors.flagRed,
-                                          fontWeight: FontWeight.w800),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                    // Marker color legend (who filed the report).
-                    Positioned(
-                      left: AppSpacing.sm,
-                      bottom: AppSpacing.sm,
-                      child: Container(
+                  ),
+                  child: GisMapView(
+                    focusPoint: widget.focusPoint,
+                    focusRequest: _focus,
+                    filters: _filters,
+                    onPinTap: (r) =>
+                        GisMapScreen.showReportDialog(context, r),
+                    onTaggedBuildingTap: (tag) =>
+                        GisMapScreen.showBuildingDialog(context, tag),
+                    onFeatureTap: (info) =>
+                        GisMapScreen.showFeatureInfoDialog(context, info),
+                  ),
+                ),
+                // Compact, low-key "Report Incident" in the map's
+                // bottom-right corner.
+                Positioned(
+                  right: AppSpacing.sm,
+                  bottom: AppSpacing.sm,
+                  child: Material(
+                    color: AppColors.surface.withValues(alpha: 0.92),
+                    borderRadius: BorderRadius.circular(AppRadii.pill),
+                    elevation: 2,
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(AppRadii.pill),
+                      onTap: _openReportIncident,
+                      child: Padding(
                         padding: const EdgeInsets.symmetric(
-                            horizontal: 10, vertical: 7),
-                        decoration: BoxDecoration(
-                          color: AppColors.surface.withValues(alpha: 0.92),
-                          borderRadius: BorderRadius.circular(AppRadii.sm),
-                          border: Border.all(color: AppColors.divider),
-                        ),
-                        child: const Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
+                            horizontal: 12, vertical: 8),
+                        child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            _LegendRow(
-                                color: kReportResidentColor,
-                                label: 'Resident report'),
-                            SizedBox(height: 4),
-                            _LegendRow(
-                                color: kReportOfficialColor,
-                                label: 'Official report'),
+                            const Icon(Icons.campaign_outlined,
+                                size: 16, color: AppColors.flagRed),
+                            const SizedBox(width: 5),
+                            Text(
+                              'Report Incident',
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .labelSmall
+                                  ?.copyWith(
+                                      color: AppColors.flagRed,
+                                      fontWeight: FontWeight.w800),
+                            ),
                           ],
                         ),
                       ),
                     ),
-                  ],
+                  ),
                 ),
+                // Marker color legend (who filed the report).
+                Positioned(
+                  left: AppSpacing.sm,
+                  bottom: AppSpacing.sm,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 10, vertical: 7),
+                    decoration: BoxDecoration(
+                      color: AppColors.surface.withValues(alpha: 0.92),
+                      borderRadius: BorderRadius.circular(AppRadii.sm),
+                      border: Border.all(color: AppColors.divider),
+                    ),
+                    child: const Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        _LegendRow(
+                            color: kReportResidentColor,
+                            label: 'Resident report'),
+                        SizedBox(height: 4),
+                        _LegendRow(
+                            color: kReportOfficialColor,
+                            label: 'Official report'),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        // ── Reports feed + AI panels (scroll beneath the pinned map) ──
+        // The MIS shell's swipe-to-open-drawer is restored here via the
+        // horizontal-drag detector; it wraps only this lower area, so it
+        // never competes with the map's own gestures. In the public portal
+        // the enclosing Scaffold has no drawer and the swipe is a no-op.
+        Expanded(
+          child: GestureDetector(
+            onHorizontalDragEnd: (details) {
+              final v = details.primaryVelocity ?? 0;
+              final scaffold = Scaffold.maybeOf(context);
+              if (v > 250 &&
+                  scaffold != null &&
+                  scaffold.hasDrawer &&
+                  !scaffold.isDrawerOpen) {
+                scaffold.openDrawer();
+              }
+            },
+            child: RefreshIndicator(
+              onRefresh: () => _refreshMapData(context),
+              color: AppColors.navy,
+              child: ListView(
+                controller: _scrollController,
+                padding: EdgeInsets.zero,
+                physics: const AlwaysScrollableScrollPhysics(),
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(AppSpacing.gutter,
+                        AppSpacing.sm, AppSpacing.gutter, 0),
+                    child: Text(
+                      'This map is for reference only. Tap a pin, tagged '
+                      'building, or marker to view its details.',
+                      style: text.labelSmall?.copyWith(color: AppColors.inkMuted),
+                    ),
+                  ),
+                  const SizedBox(height: AppSpacing.sm),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(AppSpacing.gutter, 0,
+                        AppSpacing.gutter, AppSpacing.xxl),
+                    child: _buildFeedAndPanels(context, text),
+                  ),
+                ],
               ),
             ),
           ),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(
-              AppSpacing.gutter, AppSpacing.sm, AppSpacing.gutter, 0),
-          child: Text(
-            'This map is for reference only. Tap a pin, tagged building, or '
-            'marker to view its details.',
-            style: text.labelSmall?.copyWith(color: AppColors.inkMuted),
-          ),
         ),
-        const SizedBox(height: AppSpacing.sm),
-
-        // ── Reports feed + AI panels (scroll below the map) ─────
-        Padding(
-          padding: const EdgeInsets.fromLTRB(
-              AppSpacing.gutter, 0, AppSpacing.gutter, AppSpacing.xxl),
-          child: _buildFeedAndPanels(context, text),
-        ),
-        ],
-      ),
+      ],
     );
   }
 

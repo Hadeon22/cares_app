@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../core/constants/app_colors.dart';
 import '../core/constants/app_constants.dart';
+import '../core/i18n/app_text.dart';
 import '../core/utils/fade_slide.dart';
 import 'common.dart';
 
@@ -71,7 +72,7 @@ class HeroSection extends StatelessWidget {
           FadeSlide(
             delay: const Duration(milliseconds: 230),
             child: Text(
-              AppStrings.heroDescription,
+              L.text.heroDescription,
               style: text.bodyMedium?.copyWith(color: AppColors.onNavyMuted),
             ),
           ),

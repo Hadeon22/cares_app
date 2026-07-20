@@ -7,6 +7,7 @@ import '../../data/stores.dart';
 import '../../screens/services/certificate_request_screen.dart';
 import '../../widgets/app_toast.dart';
 import '../../widgets/form_widgets.dart';
+import '../../widgets/paginator.dart';
 import 'mis_widgets.dart';
 
 /// Certificate Processing module (js/pages/certificates.js) — the live
@@ -119,6 +120,36 @@ class CertificatesPage extends StatelessWidget {
     await _setStatus(context, r, 'rejected', remarks: remark);
   }
 
+  /// Permanently delete a request (gated by the Delete Permissions matrix).
+  Future<void> _delete(BuildContext context, CertificateRequest r) async {
+    final ok = await confirmDelete(
+      context,
+      title: 'Delete ${r.requestNo}?',
+      message: 'This permanently removes ${r.applicant.split(',').first}\'s '
+          '${r.typeLabel} request. This cannot be undone.',
+    );
+    if (!ok || !context.mounted) return;
+    try {
+      await CertificateStore.instance
+          .delete(r, accountId: AppSession.instance.accountId);
+    } catch (e) {
+      if (context.mounted) {
+        showAppToast(context, e.toString(), icon: Icons.error_outline);
+      }
+      return;
+    }
+    AuditLog.instance.log(
+      'CERT_DELETE',
+      '${r.typeLabel} (${r.requestNo}) deleted',
+      level: AuditLevel.warning,
+      category: AuditCategory.certificate,
+    );
+    if (context.mounted) {
+      showAppToast(context, '${r.requestNo} deleted',
+          icon: Icons.delete_outline);
+    }
+  }
+
   /// Read-only detail sheet — the full request + requester information,
   /// mirroring the web map's View modal (openViewCert in certificates.js).
   void _viewRequest(BuildContext context, CertificateRequest r) {
@@ -216,10 +247,12 @@ class CertificatesPage extends StatelessWidget {
   Widget build(BuildContext context) {
     final store = CertificateStore.instance;
     store.ensureLoaded();
+    DeletePermissions.instance.ensureLoaded();
     return AnimatedBuilder(
-      animation: store,
+      animation: Listenable.merge([store, DeletePermissions.instance]),
       builder: (context, _) {
         final requests = store.all;
+        final canDelete = canDeleteModule('certificates');
         final text = Theme.of(context).textTheme;
 
         return ListView(
@@ -264,9 +297,10 @@ class CertificatesPage extends StatelessWidget {
                           ? const EmptyState(
                               'No certificate requests yet. Requests filed '
                               'from the app or web portal appear here.')
-                          : Column(
-                              children: [
-                                for (final r in requests)
+                          : PaginatedColumn<CertificateRequest>(
+                              items: requests,
+                              itemLabel: 'request',
+                              itemBuilder: (context, r) =>
                                   Container(
                                     margin: const EdgeInsets.only(
                                         bottom: AppSpacing.sm),
@@ -305,6 +339,19 @@ class CertificatesPage extends StatelessWidget {
                                               kind: _badges[r.status] ??
                                                   BadgeKind.gray,
                                             ),
+                                            // Delete: icon-only, right of the
+                                            // status badge and about its size
+                                            // (shown only when permitted).
+                                            if (canDelete)
+                                              Padding(
+                                                padding: const EdgeInsets.only(
+                                                    left: 4),
+                                                child: DeleteIconButton(
+                                                  size: 18,
+                                                  onPressed: () =>
+                                                      _delete(context, r),
+                                                ),
+                                              ),
                                           ],
                                         ),
                                         const SizedBox(height: 4),
@@ -375,7 +422,6 @@ class CertificatesPage extends StatelessWidget {
                                     ),
                                     ),
                                   ),
-                              ],
                             ),
             ),
           ],

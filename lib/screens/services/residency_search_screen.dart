@@ -161,7 +161,7 @@ class _ResidencySearchScreenState extends State<ResidencySearchScreen> {
           OutlinedButton.icon(
             style: OutlinedButton.styleFrom(
               foregroundColor: AppColors.navy,
-              side: const BorderSide(color: AppColors.divider),
+              side: BorderSide(color: AppColors.divider),
             ),
             onPressed: () => showAppToast(
                 context, 'Exporting results as CSV...',

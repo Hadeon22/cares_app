@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../core/constants/app_constants.dart';
+import '../core/i18n/app_text.dart';
 import '../models/models.dart';
 import '../widgets/common.dart';
 import '../widgets/pull_to_refresh.dart';
@@ -17,15 +18,14 @@ class ServicesScreen extends StatelessWidget {
       physics: const AlwaysScrollableScrollPhysics(
           parent: ClampingScrollPhysics()),
       slivers: [
-        const SliverPadding(
-          padding: EdgeInsets.fromLTRB(
+        SliverPadding(
+          padding: const EdgeInsets.fromLTRB(
               AppSpacing.gutter, AppSpacing.lg, AppSpacing.gutter, 0),
           sliver: SliverToBoxAdapter(
             child: SectionHeader(
-              eyebrow: 'Citizen Services',
-              title: AppStrings.servicesHeading,
-              subtitle: '${AppStrings.servicesSub} No account required '
-                  'for most services.',
+              eyebrow: L.text.citizenServices,
+              title: L.text.servicesHeading,
+              subtitle: '${L.text.servicesSub} ${L.text.noAccountNeeded}',
             ),
           ),
         ),

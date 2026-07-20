@@ -5,6 +5,7 @@ import '../../core/constants/app_constants.dart';
 import '../../data/stores.dart';
 import '../../widgets/app_toast.dart';
 import '../../widgets/form_widgets.dart';
+import '../../widgets/paginator.dart';
 import 'mis_widgets.dart';
 
 /// Audit Logs module (js/pages/audit.js) — the real audit trail recorded
@@ -44,7 +45,7 @@ class _AuditPageState extends State<AuditPage> {
       if (_category != null && e.category != _category) return false;
       if (_level != null && e.level != _level) return false;
       if (q.isNotEmpty &&
-          !'${e.user} ${e.role} ${e.action} ${e.details}'
+          !'${e.user} ${e.role} ${e.action} ${e.details} ${e.itemLabel}'
               .toLowerCase()
               .contains(q)) {
         return false;
@@ -209,7 +210,10 @@ class _AuditPageState extends State<AuditPage> {
                             'and archive operations will appear here.'
                         : 'No log entries match your filters.')
                   else
-                    for (final e in filtered)
+                    PaginatedColumn<AuditEntry>(
+                      items: filtered,
+                      itemLabel: 'entry',
+                      itemBuilder: (context, e) =>
                       Container(
                         width: double.infinity,
                         margin: const EdgeInsets.only(bottom: AppSpacing.sm),
@@ -232,6 +236,10 @@ class _AuditPageState extends State<AuditPage> {
                                 StatusBadge(e.level.name.toUpperCase(),
                                     kind: _levelBadges[e.level] ??
                                         BadgeKind.gray),
+                                // The exact row this entry touched (e.g.
+                                // "announcement #5") when known.
+                                if (e.itemLabel.isNotEmpty)
+                                  StatusBadge(e.itemLabel, kind: BadgeKind.gray),
                                 Text(_fmtTs(e.ts),
                                     style: text.labelSmall?.copyWith(
                                         color: AppColors.inkMuted)),
@@ -254,6 +262,7 @@ class _AuditPageState extends State<AuditPage> {
                           ],
                         ),
                       ),
+                    ),
                 ],
               ),
             ),

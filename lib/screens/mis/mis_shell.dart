@@ -10,6 +10,7 @@ import '../../data/stores.dart';
 import '../../widgets/app_toast.dart';
 import '../../widgets/common.dart';
 import '../../widgets/offline_banner.dart';
+import '../../widgets/photo_picker.dart';
 import '../../widgets/pull_to_refresh.dart';
 import '../gis_map_screen.dart';
 import '../main_shell.dart';
@@ -23,6 +24,7 @@ import 'dashboard_page.dart';
 import 'feedback_page.dart';
 import 'incidents_page.dart';
 import 'residency_page.dart';
+import 'site_content_page.dart';
 import 'users_page.dart';
 
 /// One MIS module — mirrors moduleConfig + modulePermissions (js/shell.js).
@@ -56,6 +58,8 @@ const _modules = <_MisModule>[
       [UserRole.admin, UserRole.officer]),
   _MisModule('analytics', 'Analytics', 'Predictive insights & trend charts',
       Icons.insights_outlined, [UserRole.admin, UserRole.officer]),
+  _MisModule('content', 'Site Content', 'Announcements & barangay officials',
+      Icons.edit_note_outlined, [UserRole.admin, UserRole.officer]),
   _MisModule('users', 'User Management', 'Roles & access control',
       Icons.manage_accounts_outlined, [UserRole.admin]),
   _MisModule('audit', 'Audit Logs', 'System activity & compliance',
@@ -73,6 +77,21 @@ class MisShell extends StatefulWidget {
   State<MisShell> createState() => _MisShellState();
 }
 
+/// Whether [role] may open module [m]. Officers additionally respect the
+/// admin-set [ModuleAccess] overrides (a module's built-in default is used
+/// until an override exists), so a toggle in User Management actually gates
+/// the module. Admins/residents follow the module's static role list.
+bool _moduleAllowed(_MisModule m, UserRole? role) {
+  // Account Claiming review is hidden for now — gating it here keeps it out
+  // of the sidebar and out of the routing switch in one place.
+  if (m.key == 'accounts' && !AppFeatures.misAccountClaiming) return false;
+  if (role == null || !m.roles.contains(role)) return false;
+  if (role == UserRole.officer) {
+    return ModuleAccess.instance.officerCan(m.key, fallback: true);
+  }
+  return true;
+}
+
 class _MisShellState extends State<MisShell> {
   String _module = 'dashboard';
   Timer? _notifTimer;
@@ -86,6 +105,8 @@ class _MisShellState extends State<MisShell> {
     // Same polling as the portal shell: staff get request updates and
     // messages in their bell without a manual refresh.
     NotificationStore.instance.ensureLoaded();
+    // Officer module-access overrides gate the drawer + navigation.
+    ModuleAccess.instance.ensureLoaded();
     _notifTimer = Timer.periodic(const Duration(seconds: 60), (_) {
       if (AppSession.instance.isSignedIn &&
           !ApiClient.instance.offline.value) {
@@ -105,7 +126,7 @@ class _MisShellState extends State<MisShell> {
     final module =
         _modules.firstWhere((m) => m.key == key, orElse: () => _modules.first);
     // Client-side RBAC, mirroring nav() in js/shell.js.
-    if (session.role == null || !module.roles.contains(session.role)) {
+    if (!_moduleAllowed(module, session.role)) {
       showAppToast(context, 'Access denied: insufficient permissions',
           icon: Icons.flag_outlined);
       return;
@@ -156,6 +177,8 @@ class _MisShellState extends State<MisShell> {
         return const AccountsPage();
       case 'analytics':
         return const AnalyticsPage();
+      case 'content':
+        return const SiteContentPage();
       case 'users':
         return const UsersPage();
       case 'audit':
@@ -275,18 +298,7 @@ class _MisShellState extends State<MisShell> {
                   ),
                 ),
               ],
-              child: CircleAvatar(
-                radius: 16,
-                backgroundColor: AppColors.gold,
-                child: Text(
-                  session.initials,
-                  style: const TextStyle(
-                    color: AppColors.navyDeep,
-                    fontWeight: FontWeight.w900,
-                    fontSize: 12,
-                  ),
-                ),
-              ),
+              child: const SessionAvatar(radius: 16),
             ),
           ),
         ],
@@ -306,13 +318,19 @@ class _MisShellState extends State<MisShell> {
       // (in addition to Scaffold's own left-edge drag). Most MIS pages
       // scroll vertically, so they don't claim the horizontal drag and the
       // swipe wins; horizontally-scrolling tables keep their own scroll.
+      // Disabled on the GIS module — the swipe would fight map panning.
+      // GisMapScreen provides its own drawer swipe for everything outside
+      // the map canvas (filter row, reports feed, AI panel).
       body: GestureDetector(
-        onHorizontalDragEnd: (details) {
-          final v = details.primaryVelocity ?? 0;
-          if (v > 250 && !(_scaffoldKey.currentState?.isDrawerOpen ?? false)) {
-            _scaffoldKey.currentState?.openDrawer();
-          }
-        },
+        onHorizontalDragEnd: _module == 'gis'
+            ? null
+            : (details) {
+                final v = details.primaryVelocity ?? 0;
+                if (v > 250 &&
+                    !(_scaffoldKey.currentState?.isDrawerOpen ?? false)) {
+                  _scaffoldKey.currentState?.openDrawer();
+                }
+              },
         child: Column(
           children: [
             const OfflineBanner(),
@@ -383,9 +401,8 @@ class _MisDrawer extends StatelessWidget {
   Widget build(BuildContext context) {
     final session = AppSession.instance;
     final text = Theme.of(context).textTheme;
-    final visible = _modules
-        .where((m) => session.role != null && m.roles.contains(session.role))
-        .toList();
+    final visible =
+        _modules.where((m) => _moduleAllowed(m, session.role)).toList();
 
     return Drawer(
       backgroundColor: AppColors.navyDeep,
@@ -426,17 +443,7 @@ class _MisDrawer extends StatelessWidget {
                   horizontal: AppSpacing.md, vertical: AppSpacing.sm),
               child: Row(
                 children: [
-                  CircleAvatar(
-                    radius: 18,
-                    backgroundColor: AppColors.gold,
-                    child: Text(
-                      session.initials,
-                      style: const TextStyle(
-                          color: AppColors.navyDeep,
-                          fontWeight: FontWeight.w900,
-                          fontSize: 13),
-                    ),
-                  ),
+                  const SessionAvatar(radius: 18),
                   const SizedBox(width: AppSpacing.sm + 4),
                   Expanded(
                     child: Column(

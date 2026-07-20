@@ -2,9 +2,66 @@ import 'package:flutter/material.dart';
 
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_constants.dart';
+import '../../data/session.dart';
+import '../../data/stores.dart';
 
 /// Shared building blocks for the MIS module pages — mobile versions
 /// of the web's .page-header, .kpi-card, .card and .timeline styles.
+
+/// Whether the signed-in staff member may delete records in [moduleKey]
+/// (one of [kDeletableModules]). Drives whether delete controls render.
+bool canDeleteModule(String moduleKey) =>
+    DeletePermissions.instance.can(AppSession.instance.role?.name, moduleKey);
+
+/// Standard "are you sure?" confirmation for a destructive delete. Resolves
+/// true only when the user taps the red Delete button.
+Future<bool> confirmDelete(
+  BuildContext context, {
+  required String title,
+  required String message,
+  String confirmLabel = 'Delete',
+}) async {
+  final ok = await showDialog<bool>(
+    context: context,
+    builder: (dialog) => AlertDialog(
+      title: Text(title),
+      content: Text(message),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(dialog).pop(false),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          style: FilledButton.styleFrom(backgroundColor: AppColors.flagRed),
+          onPressed: () => Navigator.of(dialog).pop(true),
+          child: Text(confirmLabel),
+        ),
+      ],
+    ),
+  );
+  return ok == true;
+}
+
+/// Compact red trash icon-button for deleting a record row. Sized to sit
+/// beside a [StatusBadge] (see the Certificates page) or at a row's end.
+class DeleteIconButton extends StatelessWidget {
+  const DeleteIconButton({super.key, required this.onPressed, this.size = 20});
+
+  final VoidCallback onPressed;
+  final double size;
+
+  @override
+  Widget build(BuildContext context) {
+    return IconButton(
+      tooltip: 'Delete',
+      onPressed: onPressed,
+      visualDensity: VisualDensity.compact,
+      padding: EdgeInsets.zero,
+      constraints: BoxConstraints.tightFor(width: size + 12, height: size + 12),
+      icon: Icon(Icons.delete_outline, size: size, color: AppColors.flagRed),
+    );
+  }
+}
 
 /// Page title + description (web .page-header).
 class MisPageHeader extends StatelessWidget {

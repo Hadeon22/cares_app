@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../gis/gis_data.dart';
+import '../models/models.dart';
 import 'api_client.dart';
 import 'offline_queue.dart';
 
@@ -160,6 +161,16 @@ class ResidentStore extends ChangeNotifier with ApiStore {
       ..clear()
       ..addAll(rows.map(
           (r) => ResidentRecord.fromJson(r as Map<String, dynamic>)));
+  }
+
+  /// Archive a resident (soft delete on the server) and drop it locally.
+  Future<void> delete(ResidentRecord r, {int? accountId}) async {
+    if (r.id == null) return;
+    final path = '/api/residents/${r.id}';
+    await ApiClient.instance
+        .delete(accountId == null ? path : '$path?account_id=$accountId');
+    _records.removeWhere((x) => x.id == r.id);
+    notifyListeners();
   }
 }
 
@@ -320,6 +331,15 @@ class CertificateStore extends ChangeNotifier with ApiStore {
     return req;
   }
 
+  /// Permanently remove a request row and drop it locally.
+  Future<void> delete(CertificateRequest r, {int? accountId}) async {
+    final path = '/api/certificates/${r.id}';
+    await ApiClient.instance
+        .delete(accountId == null ? path : '$path?account_id=$accountId');
+    _requests.removeWhere((x) => x.id == r.id);
+    notifyListeners();
+  }
+
   /// Move a request through the pipeline (approve / issue / reject).
   Future<void> setStatus(CertificateRequest r, String status,
       {String? remarks, int? accountId}) async {
@@ -340,6 +360,133 @@ class CertificateStore extends ChangeNotifier with ApiStore {
       notifyListeners();
       rethrow;
     }
+  }
+}
+
+/// ── Resident profile edit requests (/api/edit-requests) ─────
+/// Residents propose changes to their own record from the app; staff
+/// review them in MIS → Barangay Residency → Edit Requests.
+
+/// Field slug → display label for the review UI (matches the server's
+/// EDITABLE list in routes/edit-requests.js).
+const Map<String, String> kEditableFieldLabels = {
+  'last_name': 'Last Name',
+  'first_name': 'First Name',
+  'middle_name': 'Middle Name',
+  'suffix': 'Suffix',
+  'birthdate': 'Birthdate',
+  'sex': 'Sex',
+  'civil_status': 'Civil Status',
+  'contact_no': 'Contact No.',
+  'occupation': 'Occupation',
+  'voter_status': 'Voter Status',
+  'photo': 'Profile Photo',
+};
+
+class ResidentEditRequest {
+  ResidentEditRequest({
+    required this.id,
+    required this.residentId,
+    required this.residentName,
+    required this.changes,
+    required this.current,
+    required this.createdAt,
+    this.status = 'pending',
+    this.remarks,
+    this.processedAt,
+    this.processedByName,
+  });
+
+  factory ResidentEditRequest.fromJson(Map<String, dynamic> j) =>
+      ResidentEditRequest(
+        id: j['id'] as int,
+        residentId: j['resident_id'] as int,
+        residentName: (j['resident_name'] ?? '') as String,
+        changes: (j['changes'] as Map? ?? const {}).cast<String, dynamic>(),
+        current: (j['current'] as Map? ?? const {}).cast<String, dynamic>(),
+        status: (j['status'] ?? 'pending') as String,
+        remarks: j['remarks'] as String?,
+        processedByName: j['processed_by_name'] as String?,
+        processedAt: j['processed_at'] == null
+            ? null
+            : _parseTs(j['processed_at']),
+        createdAt: _parseTs(j['created_at']),
+      );
+
+  final int id;
+  final int residentId;
+  final String residentName;
+
+  /// Requested new values, keyed by resident column name.
+  final Map<String, dynamic> changes;
+
+  /// The record's values (at fetch time) for the same keys — old → new.
+  final Map<String, dynamic> current;
+
+  String status; // pending | approved | rejected
+  String? remarks;
+  final String? processedByName;
+  final DateTime? processedAt;
+  final DateTime createdAt;
+}
+
+class EditRequestStore extends ChangeNotifier with ApiStore {
+  EditRequestStore._();
+  static final EditRequestStore instance = EditRequestStore._();
+
+  final List<ResidentEditRequest> _requests = [];
+  List<ResidentEditRequest> get all => List.unmodifiable(_requests);
+
+  int get pendingCount =>
+      _requests.where((r) => r.status == 'pending').length;
+
+  @override
+  Future<void> fetch() async {
+    final rows = await ApiClient.instance.get('/api/edit-requests') as List;
+    _requests
+      ..clear()
+      ..addAll(rows.map(
+          (r) => ResidentEditRequest.fromJson(r as Map<String, dynamic>)));
+  }
+
+  /// Resident-side: file a request. [changes] holds only the fields being
+  /// changed, keyed by resident column name.
+  Future<void> submit({
+    required int residentId,
+    required Map<String, dynamic> changes,
+    int? accountId,
+  }) async {
+    await ApiClient.instance.post('/api/edit-requests', {
+      'resident_id': residentId,
+      'changes': changes,
+      if (accountId != null) 'account_id': accountId,
+    });
+    // Staff lists refresh on next load; no local insert needed since the
+    // submitting resident doesn't see this store.
+  }
+
+  /// Staff-side: approve / reject (approve applies the changes server-side).
+  Future<void> setStatus(ResidentEditRequest r, String status,
+      {String? remarks, int? accountId}) async {
+    final prev = r.status;
+    final prevRemarks = r.remarks;
+    r.status = status; // optimistic — revert on failure
+    if (remarks != null) r.remarks = remarks;
+    notifyListeners();
+    try {
+      await ApiClient.instance.patch('/api/edit-requests/${r.id}', {
+        'status': status,
+        if (remarks != null) 'remarks': remarks,
+        if (accountId != null) 'account_id': accountId,
+      });
+    } catch (_) {
+      r.status = prev;
+      r.remarks = prevRemarks;
+      notifyListeners();
+      rethrow;
+    }
+    // An approval changed the resident record — refresh the directory.
+    if (status == 'approved') ResidentStore.instance.refresh();
   }
 }
 
@@ -413,6 +560,8 @@ class AuditEntry {
     required this.details,
     this.level = AuditLevel.info,
     this.category = AuditCategory.system,
+    this.table,
+    this.recordId,
   });
 
   factory AuditEntry.fromJson(Map<String, dynamic> j) => AuditEntry(
@@ -423,6 +572,8 @@ class AuditEntry {
         details: (j['details'] ?? '') as String? ?? '',
         level: AuditLevel.values.asNameMap()[j['level']] ?? AuditLevel.info,
         category: _auditCategoryFrom(j['category'] as String?),
+        table: j['table_name'] as String?,
+        recordId: j['record_id'] == null ? null : '${j['record_id']}',
       );
 
   final DateTime ts;
@@ -432,6 +583,17 @@ class AuditEntry {
   final String details;
   final AuditLevel level;
   final AuditCategory category;
+
+  /// The row an entry touched — DB-trigger entries carry these; app-level
+  /// entries leave them null. Shown as an "Item" reference in the UI.
+  final String? table;
+  final String? recordId;
+
+  /// "<table> #<id>" (or "#<id>") when known, else empty.
+  String get itemLabel {
+    if (recordId == null || recordId!.isEmpty) return '';
+    return '${table != null ? '$table ' : ''}#$recordId';
+  }
 }
 
 /// Mirrors js/audit-log.js. log() records locally right away (so the UI is
@@ -655,6 +817,16 @@ class FeedbackStore extends ChangeNotifier with ApiStore {
           rows.map((r) => FeedbackEntry.fromJson(r as Map<String, dynamic>)));
   }
 
+  /// Permanently remove a feedback row and drop it locally.
+  Future<void> delete(FeedbackEntry e, {int? accountId}) async {
+    if (e.id == null) return;
+    final path = '/api/feedback/${e.id}';
+    await ApiClient.instance
+        .delete(accountId == null ? path : '$path?account_id=$accountId');
+    _entries.removeWhere((x) => x.id == e.id);
+    notifyListeners();
+  }
+
   Future<void> add({
     required int rating,
     required String category,
@@ -870,6 +1042,16 @@ class IncidentStore extends ChangeNotifier with ApiStore {
     _reports.add(report);
     notifyListeners();
     return report;
+  }
+
+  /// Permanently remove a blotter entry and drop it locally.
+  Future<void> delete(IncidentReport r, {int? accountId}) async {
+    if (r.id == null) return;
+    final path = '/api/incidents/${r.id}';
+    await ApiClient.instance
+        .delete(accountId == null ? path : '$path?account_id=$accountId');
+    _reports.removeWhere((x) => x.id == r.id);
+    notifyListeners();
   }
 
   /// Resolve / reopen. Optimistic: flips locally, reverts if the server
@@ -1294,21 +1476,94 @@ class NotificationStore extends ChangeNotifier with ApiStore {
   }
 }
 
-/// ── Barangay officials (js/site-config.js defaults) ──────────
+/// ── Announcements (announcement table via /api/announcements) ─
+/// The landing page's "Latest announcements" bulletin; staff manage the
+/// list from MIS → Site Content.
+class AnnouncementStore extends ChangeNotifier with ApiStore {
+  AnnouncementStore._();
+  static final AnnouncementStore instance = AnnouncementStore._();
+
+  final List<Announcement> _items = [];
+  List<Announcement> get all => List.unmodifiable(_items);
+
+  @override
+  Future<void> fetch() async {
+    final rows = await ApiClient.instance.get('/api/announcements') as List;
+    _items
+      ..clear()
+      ..addAll(
+          rows.map((r) => Announcement.fromJson(r as Map<String, dynamic>)));
+  }
+
+  /// Create ([id] == null) or update an announcement.
+  Future<void> save({
+    int? id,
+    required String title,
+    required String body,
+    required String tag,
+    int? accountId,
+  }) async {
+    final payload = {
+      'title': title,
+      'body': body,
+      'tag': tag,
+      if (accountId != null) 'account_id': accountId,
+    };
+    final res = id == null
+        ? await ApiClient.instance.post('/api/announcements', payload)
+        : await ApiClient.instance.put('/api/announcements/$id', payload);
+    final saved = Announcement.fromJson(res as Map<String, dynamic>);
+    if (id == null) {
+      _items.insert(0, saved);
+    } else {
+      final ix = _items.indexWhere((a) => a.id == id);
+      if (ix >= 0) _items[ix] = saved;
+    }
+    notifyListeners();
+  }
+
+  Future<void> remove(Announcement a, {int? accountId}) async {
+    final path = '/api/announcements/${a.id}';
+    await ApiClient.instance.delete(
+        accountId == null ? path : '$path?account_id=$accountId');
+    _items.removeWhere((x) => x.id == a.id);
+    notifyListeners();
+  }
+}
+
+/// ── Barangay officials (official table via /api/officials) ────
+/// The landing page's "Barangay Officials" leadership cards — the DB-backed
+/// replacement for the web's js/site-config.js localStorage store.
 class Official {
   const Official({
+    this.id,
     required this.name,
     required this.role,
     required this.desc,
     this.honorific = 'Hon.',
+    this.photo,
   });
 
+  factory Official.fromJson(Map<String, dynamic> j) => Official(
+        id: j['id'] as int?,
+        honorific: (j['honorific'] ?? 'Hon.') as String? ?? 'Hon.',
+        name: (j['name'] ?? '') as String,
+        role: (j['role'] ?? '') as String,
+        desc: (j['description'] ?? '') as String? ?? '',
+        photo: j['photo'] as String?,
+      );
+
+  final int? id;
   final String honorific;
   final String name;
   final String role;
   final String desc;
 
-  String get displayName => '$honorific $name';
+  /// base64 data URL (same convention as resident.photo) or null.
+  final String? photo;
+
+  String get displayName =>
+      honorific.isEmpty ? name : '$honorific $name';
 
   String get initials {
     final parts = name.split(' ').where((p) => p.isNotEmpty).toList();
@@ -1319,20 +1574,614 @@ class Official {
   }
 }
 
-const List<Official> kOfficials = [
-  Official(
-    name: 'Juan Dela Cruz',
-    role: 'Punong Barangay',
-    desc: 'Leads the barangay administration and community programs.',
-  ),
-  Official(
-    name: 'Maria Santos',
-    role: 'Kagawad — Public Safety',
-    desc: 'Oversees public safety, peace and order, and disaster response.',
-  ),
-  Official(
-    name: 'Pedro Reyes',
-    role: 'Kagawad — Health & Sanitation',
-    desc: 'Manages health programs, sanitation, and community welfare.',
-  ),
+class OfficialStore extends ChangeNotifier with ApiStore {
+  OfficialStore._();
+  static final OfficialStore instance = OfficialStore._();
+
+  final List<Official> _items = [];
+  List<Official> get all => List.unmodifiable(_items);
+
+  @override
+  Future<void> fetch() async {
+    final rows = await ApiClient.instance.get('/api/officials') as List;
+    _items
+      ..clear()
+      ..addAll(rows.map((r) => Official.fromJson(r as Map<String, dynamic>)));
+  }
+
+  /// Create ([id] == null) or update an official.
+  Future<void> save({
+    int? id,
+    required String honorific,
+    required String name,
+    required String role,
+    required String desc,
+    String? photo,
+    int? accountId,
+  }) async {
+    final payload = {
+      'honorific': honorific,
+      'name': name,
+      'role': role,
+      'description': desc,
+      'photo': photo,
+      if (accountId != null) 'account_id': accountId,
+    };
+    final res = id == null
+        ? await ApiClient.instance.post('/api/officials', payload)
+        : await ApiClient.instance.put('/api/officials/$id', payload);
+    final saved = Official.fromJson(res as Map<String, dynamic>);
+    if (id == null) {
+      _items.add(saved);
+    } else {
+      final ix = _items.indexWhere((o) => o.id == id);
+      if (ix >= 0) _items[ix] = saved;
+    }
+    notifyListeners();
+  }
+
+  Future<void> remove(Official o, {int? accountId}) async {
+    final path = '/api/officials/${o.id}';
+    await ApiClient.instance.delete(
+        accountId == null ? path : '$path?account_id=$accountId');
+    _items.removeWhere((x) => x.id == o.id);
+    notifyListeners();
+  }
+
+  /// Move an official one slot up/down in the display order. Optimistic:
+  /// reorders locally, then persists the whole order in one call.
+  Future<void> move(Official o, int delta, {int? accountId}) async {
+    final ix = _items.indexWhere((x) => x.id == o.id);
+    final to = ix + delta;
+    if (ix < 0 || to < 0 || to >= _items.length) return;
+    final prev = List<Official>.from(_items);
+    _items
+      ..removeAt(ix)
+      ..insert(to, o);
+    notifyListeners();
+    try {
+      await ApiClient.instance.post('/api/officials/order', {
+        'ids': [for (final x in _items) x.id],
+        if (accountId != null) 'account_id': accountId,
+      });
+    } catch (_) {
+      _items
+        ..clear()
+        ..addAll(prev);
+      notifyListeners();
+      rethrow;
+    }
+  }
+}
+
+/// ── Delete permissions (settings: delete-permissions) ─────────
+/// Which staff roles may delete records in each module. Admin can always
+/// delete (and is the only role that edits this matrix); Officer is
+/// configurable per module from User Management; Residents never delete.
+/// Persisted in the shared `app_setting` table via /api/settings so the
+/// same rules apply on every device.
+
+/// A module whose records can be deleted, with its display label. The [key]
+/// matches the settings JSON and the pages that gate their delete buttons.
+class DeletableModule {
+  const DeletableModule(this.key, this.label);
+  final String key;
+  final String label;
+}
+
+const List<DeletableModule> kDeletableModules = [
+  DeletableModule('residency', 'Residency — Delete Residents'),
+  DeletableModule('certificates', 'Certificates — Delete Requests'),
+  DeletableModule('incidents', 'Blotter — Delete Reports'),
+  DeletableModule('feedback', 'Feedback — Delete Entries'),
+  DeletableModule('announcements', 'Site Content — Delete Announcements'),
+  DeletableModule('officials', 'Site Content — Delete Officials'),
+  DeletableModule('buildings', 'GIS Map — Delete Buildings'),
 ];
+
+class DeletePermissions extends ChangeNotifier with ApiStore {
+  DeletePermissions._();
+  static final DeletePermissions instance = DeletePermissions._();
+
+  static const String _settingKey = 'delete-permissions';
+
+  /// role name ('officer') → { moduleKey → allowed }. Admin is implicit
+  /// (always allowed) and never stored here.
+  Map<String, Map<String, bool>> _matrix = {};
+
+  @override
+  Future<void> fetch() async {
+    final j = await ApiClient.instance.get('/api/settings/$_settingKey')
+        as Map<String, dynamic>;
+    final value = j['value'];
+    _matrix = {};
+    if (value is Map) {
+      for (final role in value.entries) {
+        final perms = role.value;
+        if (perms is Map) {
+          _matrix[role.key.toString()] = {
+            for (final e in perms.entries) e.key.toString(): e.value == true,
+          };
+        }
+      }
+    }
+  }
+
+  /// The single blanket delete permission key (delete is now one matrix row,
+  /// not per-module).
+  static const String recordsKey = 'records';
+
+  /// Whether the role named [roleName] (UserRole.name — 'admin' / 'officer' /
+  /// 'resident') may delete records. Admin: always. Residents/guests: never.
+  /// Any other role (Officer, custom staff roles): only when the single
+  /// "Delete Records" permission is granted. [moduleKey] is ignored now that
+  /// delete is one blanket toggle. Kept role-name based so this store doesn't
+  /// import session.dart (which imports stores.dart).
+  bool can(String? roleName, String moduleKey) {
+    if (roleName == 'admin') return true;
+    if (roleName == null || roleName == 'resident') return false;
+    return _matrix[roleName]?[recordsKey] ?? false;
+  }
+
+  bool officerCan(String moduleKey) => _matrix['officer']?[moduleKey] ?? false;
+
+  /// Whether an arbitrary role key (lowercased role name) may delete
+  /// [moduleKey] — the matrix UI reads this per column. Delete defaults off.
+  bool roleCan(String roleKey, String moduleKey) =>
+      _matrix[roleKey]?[moduleKey] ?? false;
+
+  /// Set the permission for any role and persist the whole matrix.
+  Future<void> setRolePerm(String roleKey, String moduleKey, bool allowed) async {
+    final prev = _cloneMatrix();
+    (_matrix[roleKey] ??= {})[moduleKey] = allowed;
+    notifyListeners();
+    try {
+      await ApiClient.instance
+          .put('/api/settings/$_settingKey', {'value': _matrix});
+    } catch (_) {
+      _matrix = prev;
+      notifyListeners();
+      rethrow;
+    }
+  }
+
+  /// Drop a whole role's delete permissions (when a custom role is removed).
+  Future<void> removeRole(String roleKey) async {
+    if (!_matrix.containsKey(roleKey)) return;
+    final prev = _cloneMatrix();
+    _matrix.remove(roleKey);
+    notifyListeners();
+    try {
+      await ApiClient.instance
+          .put('/api/settings/$_settingKey', {'value': _matrix});
+    } catch (_) {
+      _matrix = prev;
+      notifyListeners();
+      rethrow;
+    }
+  }
+
+  /// Set the Officer permission for one module and persist the whole matrix.
+  /// Optimistic: flips locally, reverts if the save fails.
+  Future<void> setOfficer(String moduleKey, bool allowed) async {
+    final prev = _cloneMatrix();
+    (_matrix['officer'] ??= {})[moduleKey] = allowed;
+    notifyListeners();
+    try {
+      await ApiClient.instance.put('/api/settings/$_settingKey', {
+        'value': _matrix,
+      });
+    } catch (_) {
+      _matrix = prev;
+      notifyListeners();
+      rethrow;
+    }
+  }
+
+  Map<String, Map<String, bool>> _cloneMatrix() =>
+      {for (final e in _matrix.entries) e.key: Map<String, bool>.from(e.value)};
+}
+
+/// One entry in the system recycle bin (GET /api/archive). A record that was
+/// deleted from the system and can be restored — residents, certificate
+/// requests, blotter reports, feedback, announcements, officials.
+class ArchiveEntry {
+  ArchiveEntry({
+    required this.archiveId,
+    required this.module,
+    required this.typeLabel,
+    required this.title,
+    required this.subtitle,
+    required this.archivedBy,
+    required this.archivedAt,
+  });
+
+  final int archiveId;
+  final String module;
+  final String typeLabel;
+  final String title;
+  final String subtitle;
+  final String archivedBy;
+  final DateTime archivedAt;
+
+  factory ArchiveEntry.fromJson(Map<String, dynamic> j) => ArchiveEntry(
+        archiveId: j['archiveId'] as int,
+        module: (j['module'] ?? '') as String,
+        typeLabel: (j['typeLabel'] ?? 'Record') as String,
+        title: (j['title'] ?? '') as String,
+        subtitle: (j['subtitle'] ?? '') as String,
+        archivedBy: (j['archivedBy'] ?? 'System') as String,
+        archivedAt:
+            DateTime.tryParse('${j['archivedAt']}')?.toLocal() ?? DateTime.now(),
+      );
+}
+
+/// The recycle bin backing the Archive module. Lists deleted records from the
+/// shared `archive` table and restores / permanently deletes them. Every
+/// action is audited server-side (see the server's archive-service.js).
+class ArchiveStore extends ChangeNotifier with ApiStore {
+  ArchiveStore._();
+  static final ArchiveStore instance = ArchiveStore._();
+
+  final List<ArchiveEntry> _items = [];
+  List<ArchiveEntry> get all => List.unmodifiable(_items);
+
+  @override
+  Future<void> fetch() async {
+    final rows = await ApiClient.instance.get('/api/archive') as List;
+    _items
+      ..clear()
+      ..addAll(rows.map((r) => ArchiveEntry.fromJson(r as Map<String, dynamic>)));
+  }
+
+  /// Bring a record back to where it was.
+  Future<void> restore(ArchiveEntry e, {int? accountId}) async {
+    await ApiClient.instance.post('/api/archive/${e.archiveId}/restore', {
+      if (accountId != null) 'account_id': accountId,
+    });
+    _items.removeWhere((x) => x.archiveId == e.archiveId);
+    notifyListeners();
+  }
+
+  /// Permanently delete a record — it can no longer be restored.
+  Future<void> purge(ArchiveEntry e, {int? accountId}) async {
+    final path = '/api/archive/${e.archiveId}';
+    await ApiClient.instance
+        .delete(accountId == null ? path : '$path?account_id=$accountId');
+    _items.removeWhere((x) => x.archiveId == e.archiveId);
+    notifyListeners();
+  }
+}
+
+/// One deleted GIS map building (GET /api/gis/archive). These have their own
+/// snapshot shape and restore path (POST /api/gis/archive/restore) separate
+/// from the record recycle bin above.
+class ArchivedBuilding {
+  ArchivedBuilding({
+    required this.id,
+    required this.name,
+    required this.category,
+    required this.archivedAt,
+  });
+
+  final String id;
+  final String name;
+  final String category;
+  final DateTime archivedAt;
+
+  factory ArchivedBuilding.fromJson(Map<String, dynamic> j) {
+    final tag = (j['tag'] as Map?)?.cast<String, dynamic>();
+    final ms = j['archivedAt'];
+    return ArchivedBuilding(
+      id: '${j['id']}',
+      name: (tag?['name'] as String?)?.trim().isNotEmpty == true
+          ? tag!['name'] as String
+          : 'Untagged Building',
+      category: (tag?['type'] as String?) ?? '',
+      archivedAt: ms is num
+          ? DateTime.fromMillisecondsSinceEpoch(ms.toInt())
+          : DateTime.now(),
+    );
+  }
+}
+
+/// The "Deleted Map Buildings" list on the Archive page. Mirrors the web
+/// archive.js building section: pulls the shared snapshots and restores them.
+class MapBuildingArchiveStore extends ChangeNotifier with ApiStore {
+  MapBuildingArchiveStore._();
+  static final MapBuildingArchiveStore instance = MapBuildingArchiveStore._();
+
+  final List<ArchivedBuilding> _items = [];
+  List<ArchivedBuilding> get all => List.unmodifiable(_items);
+
+  @override
+  Future<void> fetch() async {
+    final rows = await ApiClient.instance.get('/api/gis/archive') as List;
+    _items
+      ..clear()
+      ..addAll(
+          rows.map((r) => ArchivedBuilding.fromJson(r as Map<String, dynamic>)));
+  }
+
+  /// Restore a building (custom → active, OSM → tombstone removed) on the map.
+  Future<void> restore(ArchivedBuilding b, {int? accountId}) async {
+    await ApiClient.instance.post('/api/gis/archive/restore', {
+      'id': b.id,
+      if (accountId != null) 'account_id': accountId,
+    });
+    _items.removeWhere((x) => x.id == b.id);
+    notifyListeners();
+  }
+}
+
+/// A login account row (GET /api/accounts) for User Management.
+class AccountRow {
+  AccountRow({
+    required this.accountId,
+    required this.name,
+    required this.email,
+    required this.role,
+    required this.residentId,
+    required this.purok,
+    required this.createdAt,
+  });
+
+  final int accountId;
+  final String name;
+  final String email;
+  String role;
+  final int? residentId;
+  final String? purok;
+  final String createdAt;
+
+  factory AccountRow.fromJson(Map<String, dynamic> j) => AccountRow(
+        accountId: j['account_id'] as int,
+        name: (j['name'] ?? j['email'] ?? '') as String,
+        email: (j['email'] ?? '') as String,
+        role: (j['role'] ?? 'Resident') as String,
+        residentId: j['resident_id'] as int?,
+        purok: j['purok'] as String?,
+        createdAt: (j['created_at'] ?? '') as String,
+      );
+}
+
+/// The account list + role changing behind User Management (mirrors the web's
+/// js/pages/users.js). Only an Admin may change roles; the server writes the
+/// ROLE_CHANGE audit entry.
+class AccountStore extends ChangeNotifier with ApiStore {
+  AccountStore._();
+  static final AccountStore instance = AccountStore._();
+
+  final List<AccountRow> _items = [];
+  List<AccountRow> get all => List.unmodifiable(_items);
+
+  @override
+  Future<void> fetch() async {
+    final rows = await ApiClient.instance.get('/api/accounts') as List;
+    _items
+      ..clear()
+      ..addAll(rows.map((r) => AccountRow.fromJson(r as Map<String, dynamic>)));
+  }
+
+  /// Change one account's role. [actorAccountId]/[actorName]/[actorRole]
+  /// identify the acting admin for the audit trail.
+  Future<void> changeRole(
+    AccountRow a,
+    String newRole, {
+    int? actorAccountId,
+    String? actorName,
+    String? actorRole,
+  }) async {
+    await ApiClient.instance.patch('/api/accounts/${a.accountId}/role', {
+      'role': newRole,
+      if (actorAccountId != null) 'account_id': actorAccountId,
+      if (actorName != null) 'actor_name': actorName,
+      if (actorRole != null) 'actor_role': actorRole,
+    });
+    a.role = newRole;
+    notifyListeners();
+  }
+}
+
+/// Which MIS modules an Officer may open. Same shape/setting mechanism as
+/// [DeletePermissions] but for module access (settings key 'module-access').
+/// Admins always have every module; residents use the public portal — so only
+/// the Officer row is configurable. Unset modules fall back to a caller-
+/// supplied default, so a fresh install behaves exactly as before.
+class ModuleAccess extends ChangeNotifier with ApiStore {
+  ModuleAccess._();
+  static final ModuleAccess instance = ModuleAccess._();
+
+  static const String _settingKey = 'module-access';
+
+  /// Full role → {moduleKey: bool} map. Other roles (resident + any custom
+  /// roles the web matrix adds) are kept intact so a save here never wipes
+  /// them; only the 'officer' entry is enforced/edited on mobile.
+  Map<String, Map<String, bool>> _byRole = {};
+
+  @override
+  Future<void> fetch() async {
+    final j = await ApiClient.instance.get('/api/settings/$_settingKey')
+        as Map<String, dynamic>;
+    final value = j['value'];
+    _byRole = {};
+    if (value is Map) {
+      value.forEach((role, perms) {
+        if (perms is Map) {
+          _byRole[role.toString()] = {
+            for (final e in perms.entries) e.key.toString(): e.value == true,
+          };
+        }
+      });
+    }
+  }
+
+  /// Effective Officer access for [moduleKey]: an explicit override if set,
+  /// otherwise [fallback] (the module's built-in default).
+  bool officerCan(String moduleKey, {required bool fallback}) =>
+      _byRole['officer']?[moduleKey] ?? fallback;
+
+  /// Effective access for any role key (lowercased role name); [fallback] is
+  /// the role's built-in default when there's no stored override.
+  bool can(String roleKey, String moduleKey, {required bool fallback}) =>
+      _byRole[roleKey]?[moduleKey] ?? fallback;
+
+  Map<String, Map<String, bool>> _clone() =>
+      {for (final e in _byRole.entries) e.key: Map<String, bool>.from(e.value)};
+
+  /// Set the override for any role + module (preserving every other role).
+  Future<void> setRole(String roleKey, String moduleKey, bool allowed) async {
+    final prev = _clone();
+    (_byRole[roleKey] ??= {})[moduleKey] = allowed;
+    notifyListeners();
+    try {
+      await ApiClient.instance
+          .put('/api/settings/$_settingKey', {'value': _byRole});
+    } catch (_) {
+      _byRole = prev;
+      notifyListeners();
+      rethrow;
+    }
+  }
+
+  /// Drop a whole role's overrides (when a custom role is removed).
+  Future<void> removeRole(String roleKey) async {
+    if (!_byRole.containsKey(roleKey)) return;
+    final prev = _clone();
+    _byRole.remove(roleKey);
+    notifyListeners();
+    try {
+      await ApiClient.instance
+          .put('/api/settings/$_settingKey', {'value': _byRole});
+    } catch (_) {
+      _byRole = prev;
+      notifyListeners();
+      rethrow;
+    }
+  }
+
+  /// Set the Officer override for one module (preserving every other role).
+  Future<void> setOfficer(String moduleKey, bool allowed) =>
+      setRole('officer', moduleKey, allowed);
+}
+
+/// The editable role columns shown in the Role Access Matrix (settings key
+/// 'matrix-roles'). Admin is implicit (always full access) and never listed
+/// here; the built-ins (Officer, Resident) are always present, and Admins can
+/// append custom roles. Shared with the web matrix.
+class MatrixRoles extends ChangeNotifier with ApiStore {
+  MatrixRoles._();
+  static final MatrixRoles instance = MatrixRoles._();
+
+  static const String _settingKey = 'matrix-roles';
+  static const List<String> builtins = ['Officer', 'Resident'];
+
+  List<String> _roles = List.of(builtins);
+  List<String> get roles => List.unmodifiable(_roles);
+
+  bool isBuiltin(String role) =>
+      builtins.any((b) => b.toLowerCase() == role.toLowerCase());
+
+  @override
+  Future<void> fetch() async {
+    final j = await ApiClient.instance.get('/api/settings/$_settingKey')
+        as Map<String, dynamic>;
+    final value = j['value'];
+    final saved = (value is Map && value['roles'] is List)
+        ? (value['roles'] as List).map((e) => '$e').toList()
+        : <String>[];
+    _roles = saved.isNotEmpty ? saved : List.of(builtins);
+    // Built-ins are always present, in front.
+    for (final b in builtins.reversed) {
+      if (!_roles.any((r) => r.toLowerCase() == b.toLowerCase())) {
+        _roles.insert(0, b);
+      }
+    }
+  }
+
+  Future<void> _persist(List<String> prev) async {
+    notifyListeners();
+    try {
+      await ApiClient.instance
+          .put('/api/settings/$_settingKey', {'value': {'roles': _roles}});
+    } catch (_) {
+      _roles = prev;
+      notifyListeners();
+      rethrow;
+    }
+  }
+
+  /// Add a custom role. Throws [ArgumentError] on a duplicate / reserved name.
+  Future<void> add(String name) async {
+    final trimmed = name.trim();
+    if (trimmed.isEmpty) return;
+    if (trimmed.toLowerCase() == 'admin' ||
+        _roles.any((r) => r.toLowerCase() == trimmed.toLowerCase())) {
+      throw ArgumentError('That role already exists.');
+    }
+    final prev = List.of(_roles);
+    _roles.add(trimmed);
+    await _persist(prev);
+  }
+
+  Future<void> remove(String name) async {
+    if (isBuiltin(name)) return;
+    final prev = List.of(_roles);
+    _roles.removeWhere((r) => r.toLowerCase() == name.toLowerCase());
+    await _persist(prev);
+  }
+}
+
+/// Live data behind the Analytics module (GET /api/stats/analytics) — the four
+/// KPIs and the four charts, all computed from real records.
+class AnalyticsStats extends ChangeNotifier with ApiStore {
+  AnalyticsStats._();
+  static final AnalyticsStats instance = AnalyticsStats._();
+
+  int residents = 0;
+  int certEfficiency = 0;
+  int incidentResolutionRate = 0;
+  double? satisfactionAvg;
+
+  /// month label → total service requests (certificates + incidents + feedback).
+  List<({String label, int total})> monthly = [];
+  List<({String type, int n})> incidentByType = [];
+  List<({String type, int n})> certByType = [];
+
+  /// Counts for ratings 1..5 (index 0 = 1★).
+  List<int> satisfactionByRating = const [0, 0, 0, 0, 0];
+
+  @override
+  Future<void> fetch() async {
+    final j = await ApiClient.instance.get('/api/stats/analytics')
+        as Map<String, dynamic>;
+    residents = (j['residents'] as num?)?.toInt() ?? 0;
+    certEfficiency = (j['cert_efficiency'] as num?)?.toInt() ?? 0;
+    incidentResolutionRate =
+        (j['incident_resolution_rate'] as num?)?.toInt() ?? 0;
+    satisfactionAvg = (j['satisfaction_avg'] as num?)?.toDouble();
+    monthly = [
+      for (final m in (j['monthly'] as List? ?? const []))
+        (
+          label: (m['label'] ?? '') as String,
+          total: ((m['certificates'] as num?)?.toInt() ?? 0) +
+              ((m['incidents'] as num?)?.toInt() ?? 0) +
+              ((m['feedback'] as num?)?.toInt() ?? 0),
+        ),
+    ];
+    incidentByType = [
+      for (final r in (j['incident_by_type'] as List? ?? const []))
+        (type: (r['type'] ?? '') as String, n: (r['n'] as num?)?.toInt() ?? 0),
+    ];
+    certByType = [
+      for (final r in (j['certificate_by_type'] as List? ?? const []))
+        (type: (r['type'] ?? '') as String, n: (r['n'] as num?)?.toInt() ?? 0),
+    ];
+    final ratings = List<int>.filled(5, 0);
+    for (final r in (j['satisfaction_by_rating'] as List? ?? const [])) {
+      final rt = (r['rating'] as num?)?.toInt() ?? 0;
+      if (rt >= 1 && rt <= 5) ratings[rt - 1] = (r['n'] as num?)?.toInt() ?? 0;
+    }
+    satisfactionByRating = ratings;
+  }
+}

@@ -2,8 +2,10 @@ import 'package:flutter/material.dart';
 
 import '../core/constants/app_colors.dart';
 import '../core/constants/app_constants.dart';
+import '../core/i18n/app_text.dart';
 import '../core/utils/fade_slide.dart';
 import '../data/session.dart';
+import '../data/stores.dart';
 import '../models/models.dart';
 import '../widgets/announcement_card.dart';
 import '../widgets/barangay_hall_card.dart';
@@ -11,10 +13,12 @@ import '../widgets/common.dart';
 import '../widgets/gis_banner.dart';
 import '../widgets/hero_section.dart';
 import '../widgets/info_card_row.dart';
+import '../widgets/official_card.dart';
 import '../widgets/pull_to_refresh.dart';
 import '../widgets/service_card.dart';
 
-/// Home: hero → hall card → quick info → services grid → GIS → news.
+/// Home: hero → hall card → quick info → services grid → GIS → news →
+/// barangay officials.
 class HomeScreen extends StatelessWidget {
   const HomeScreen({
     super.key,
@@ -31,13 +35,17 @@ class HomeScreen extends StatelessWidget {
     // the Services tab.
     final featured = ServiceItem.catalog.take(6).toList();
     final session = AppSession.instance;
+    final announcements = AnnouncementStore.instance..ensureLoaded();
+    final officials = OfficialStore.instance..ensureLoaded();
 
     // Clamping physics (via the always-scrollable parent): the iOS-style
     // bounce revealed the bare scaffold background past the last section
     // when pulling up at the page end. Always-scrollable keeps swipe-down
     // reload working even when the content fits the screen.
     return PullToRefresh(
-      child: CustomScrollView(
+      child: AnimatedBuilder(
+        animation: Listenable.merge([announcements, officials]),
+        builder: (context, _) => CustomScrollView(
       physics: const AlwaysScrollableScrollPhysics(
           parent: ClampingScrollPhysics()),
       slivers: [
@@ -84,13 +92,12 @@ class HomeScreen extends StatelessWidget {
               AppSpacing.gutter, AppSpacing.xl, AppSpacing.gutter, 0),
           sliver: SliverToBoxAdapter(
             child: SectionHeader(
-              eyebrow: 'Citizen Services',
-              title: AppStrings.servicesHeading,
-              subtitle:
-                  '${AppStrings.servicesSub} Choose a service to get started.',
+              eyebrow: L.text.citizenServices,
+              title: L.text.servicesHeading,
+              subtitle: '${L.text.servicesSub} ${L.text.chooseService}',
               trailing: TextButton(
                 onPressed: onExploreServices,
-                child: const Text('See all'),
+                child: Text(L.text.seeAll),
               ),
             ),
           ),
@@ -127,7 +134,7 @@ class HomeScreen extends StatelessWidget {
           ),
         ),
 
-        // ── Latest announcements ───────────────────────────────
+        // ── Latest announcements (live, /api/announcements) ────
         const SliverPadding(
           padding: EdgeInsets.fromLTRB(
               AppSpacing.gutter, AppSpacing.xl, AppSpacing.gutter, 0),
@@ -139,17 +146,111 @@ class HomeScreen extends StatelessWidget {
           ),
         ),
         SliverPadding(
+          padding: const EdgeInsets.fromLTRB(
+              AppSpacing.gutter, AppSpacing.md, AppSpacing.gutter, 0),
+          sliver: _storeSliver(
+            store: announcements,
+            isEmpty: announcements.all.isEmpty,
+            emptyMessage: 'No announcements posted yet. Barangay '
+                'bulletins will appear here.',
+            sliver: SliverList.separated(
+              // The bulletin shows the newest posts; the full history
+              // stays manageable from MIS → Site Content.
+              itemCount: announcements.all.take(5).length,
+              separatorBuilder: (_, __) =>
+                  const SizedBox(height: AppSpacing.sm + 4),
+              itemBuilder: (context, i) =>
+                  AnnouncementCard(announcement: announcements.all[i]),
+            ),
+          ),
+        ),
+
+        // ── Barangay officials (live, /api/officials) ──────────
+        const SliverPadding(
+          padding: EdgeInsets.fromLTRB(
+              AppSpacing.gutter, AppSpacing.xl, AppSpacing.gutter, 0),
+          sliver: SliverToBoxAdapter(
+            child: SectionHeader(
+              eyebrow: 'Leadership',
+              title: 'Barangay Officials',
+              subtitle:
+                  'The current elected officials serving Barangay Conde Labac.',
+            ),
+          ),
+        ),
+        SliverPadding(
           padding: const EdgeInsets.fromLTRB(AppSpacing.gutter, AppSpacing.md,
               AppSpacing.gutter, AppSpacing.xxl),
-          sliver: SliverList.separated(
-            itemCount: Announcement.latest.length,
-            separatorBuilder: (_, __) =>
-                const SizedBox(height: AppSpacing.sm + 4),
-            itemBuilder: (context, i) =>
-                AnnouncementCard(announcement: Announcement.latest[i]),
+          sliver: _storeSliver(
+            store: officials,
+            isEmpty: officials.all.isEmpty,
+            emptyMessage: 'The officials list has not been published yet.',
+            sliver: SliverList.separated(
+              itemCount: officials.all.length,
+              separatorBuilder: (_, __) =>
+                  const SizedBox(height: AppSpacing.sm + 4),
+              itemBuilder: (context, i) =>
+                  OfficialCard(official: officials.all[i]),
+            ),
           ),
         ),
       ],
+        ),
+      ),
+    );
+  }
+
+  /// Loading / error / empty plumbing shared by the two live sections:
+  /// spinner on first load, muted message when empty or unreachable,
+  /// otherwise the real [sliver].
+  Widget _storeSliver({
+    required ApiStore store,
+    required bool isEmpty,
+    required String emptyMessage,
+    required Widget sliver,
+  }) {
+    if (store.loading && isEmpty) {
+      return const SliverToBoxAdapter(
+        child: Padding(
+          padding: EdgeInsets.all(AppSpacing.lg),
+          child: Center(child: CircularProgressIndicator(color: AppColors.gold)),
+        ),
+      );
+    }
+    if (isEmpty) {
+      return SliverToBoxAdapter(
+        child: _SectionMessage(
+          store.error != null
+              ? 'Could not load this section. Pull down to retry.'
+              : emptyMessage,
+        ),
+      );
+    }
+    return sliver;
+  }
+}
+
+/// Muted cream box for a section with nothing to show (empty or offline).
+class _SectionMessage extends StatelessWidget {
+  const _SectionMessage(this.message);
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(AppSpacing.lg),
+      decoration: BoxDecoration(
+        color: AppColors.cream,
+        borderRadius: BorderRadius.circular(AppRadii.sm),
+      ),
+      child: Text(
+        message,
+        textAlign: TextAlign.center,
+        style: Theme.of(context)
+            .textTheme
+            .bodySmall
+            ?.copyWith(color: AppColors.inkMuted, height: 1.5),
       ),
     );
   }

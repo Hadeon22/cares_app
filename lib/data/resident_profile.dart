@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'api_client.dart';
+import 'session.dart';
 import 'stores.dart' show kClassificationLabels;
 
 /// Full resident record from GET /api/residents/:id — the same payload the
@@ -30,6 +31,7 @@ class ResidentProfile {
     this.addressText,
     this.purok,
     this.classifications = const [],
+    this.photo,
   });
 
   factory ResidentProfile.fromJson(Map<String, dynamic> j) => ResidentProfile(
@@ -53,6 +55,7 @@ class ResidentProfile {
         householdNo: j['household_no'] as String?,
         addressText: j['address_text'] as String?,
         purok: j['purok'] as String?,
+        photo: j['photo'] as String?,
         classifications: [
           for (final c in (j['classifications'] as List? ?? const []))
             kClassificationLabels[c] ?? c.toString(),
@@ -64,6 +67,15 @@ class ResidentProfile {
   /// login or on any earlier view) is returned instead.
   static Future<ResidentProfile> fetch(int residentId) async {
     final cacheKey = 'cares.profile.$residentId';
+    // When this is the signed-in user's own record, mirror the photo into
+    // the session so the navbar / profile avatars pick it up.
+    ResidentProfile syncPhoto(ResidentProfile p) {
+      if (AppSession.instance.residentId == residentId) {
+        AppSession.instance.photoNotifier.value = p.photo;
+      }
+      return p;
+    }
+
     try {
       final j = await ApiClient.instance.get('/api/residents/$residentId')
           as Map<String, dynamic>;
@@ -73,15 +85,15 @@ class ResidentProfile {
       } catch (_) {
         /* caching is best-effort */
       }
-      return ResidentProfile.fromJson(j);
+      return syncPhoto(ResidentProfile.fromJson(j));
     } on ApiException catch (e) {
       if (e.statusCode != 0) rethrow; // real server answer (404 etc.)
       try {
         final prefs = await SharedPreferences.getInstance();
         final cached = prefs.getString(cacheKey);
         if (cached != null) {
-          return ResidentProfile.fromJson(
-              (jsonDecode(cached) as Map).cast<String, dynamic>());
+          return syncPhoto(ResidentProfile.fromJson(
+              (jsonDecode(cached) as Map).cast<String, dynamic>()));
         }
       } catch (_) {}
       rethrow;
@@ -108,6 +120,9 @@ class ResidentProfile {
   final String? addressText;
   final String? purok;
   final List<String> classifications; // display labels
+
+  /// Profile photo as a base64 data URL, when one is on record.
+  final String? photo;
 
   /// "Santos, Pedro J. Jr." — middle name always as an initial (web rule).
   String get fullName =>

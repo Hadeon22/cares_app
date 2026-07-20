@@ -56,11 +56,12 @@ class AnnouncementCard extends StatelessWidget {
                     ),
                   ),
                   const Spacer(),
-                  const Icon(Icons.calendar_today_outlined,
+                  Icon(Icons.calendar_today_outlined,
                       size: 12, color: AppColors.inkMuted),
                   const SizedBox(width: 4),
                   Text(
-                    a.date,
+                    MaterialLocalizations.of(context).formatShortDate(
+                        a.createdAt),
                     style: text.labelSmall?.copyWith(color: AppColors.inkMuted),
                   ),
                 ],

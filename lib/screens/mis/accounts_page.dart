@@ -5,6 +5,7 @@ import '../../core/constants/app_constants.dart';
 import '../../data/stores.dart';
 import '../../widgets/app_toast.dart';
 import '../../widgets/form_widgets.dart';
+import '../../widgets/paginator.dart';
 import 'mis_widgets.dart';
 
 /// Account Claiming module (js/pages/accounts.js) — pending resident
@@ -80,9 +81,10 @@ class _AccountsPageState extends State<AccountsPage> {
         ]),
         MisCard(
           title: 'Pending Account Claims',
-          child: Column(
-            children: [
-              for (final c in _claims)
+          child: PaginatedColumn<_Claim>(
+            items: _claims,
+            itemLabel: 'claim',
+            itemBuilder: (context, c) =>
                 Container(
                   margin: const EdgeInsets.only(bottom: AppSpacing.sm),
                   padding: const EdgeInsets.all(AppSpacing.sm + 4),
@@ -136,7 +138,6 @@ class _AccountsPageState extends State<AccountsPage> {
                     ],
                   ),
                 ),
-            ],
           ),
         ),
       ],

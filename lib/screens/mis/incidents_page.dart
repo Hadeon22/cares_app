@@ -8,12 +8,42 @@ import '../../screens/gis_map_screen.dart';
 import '../../screens/services/incident_report_screen.dart';
 import '../../widgets/app_toast.dart';
 import '../../widgets/form_widgets.dart';
+import '../../widgets/paginator.dart';
 import 'mis_widgets.dart';
 
 /// Blotter / Incident Reports module (js/pages/incidents.js) — driven
 /// by the shared IncidentStore, with resolve/reopen actions.
 class IncidentsPage extends StatelessWidget {
   const IncidentsPage({super.key});
+
+  /// Permanently delete a blotter entry (gated by Delete Permissions).
+  Future<void> _delete(BuildContext context, IncidentReport r) async {
+    final ok = await confirmDelete(
+      context,
+      title: 'Delete ${r.caseNo}?',
+      message: 'This permanently removes the ${r.typeLabel} report and its '
+          'map pin. This cannot be undone.',
+    );
+    if (!ok || !context.mounted) return;
+    try {
+      await IncidentStore.instance
+          .delete(r, accountId: AppSession.instance.accountId);
+    } catch (e) {
+      if (context.mounted) {
+        showAppToast(context, e.toString(), icon: Icons.error_outline);
+      }
+      return;
+    }
+    AuditLog.instance.log(
+      'INCIDENT_DELETE',
+      '${r.typeLabel} (${r.caseNo}) deleted',
+      level: AuditLevel.warning,
+      category: AuditCategory.concern,
+    );
+    if (context.mounted) {
+      showAppToast(context, '${r.caseNo} deleted', icon: Icons.delete_outline);
+    }
+  }
 
   /// Full blotter entry — the record + narration, opened by tapping a card.
   void _viewIncident(BuildContext context, IncidentReport r) {
@@ -51,10 +81,12 @@ class IncidentsPage extends StatelessWidget {
   Widget build(BuildContext context) {
     final store = IncidentStore.instance;
     store.ensureLoaded();
+    DeletePermissions.instance.ensureLoaded();
     return AnimatedBuilder(
-      animation: store,
+      animation: Listenable.merge([store, DeletePermissions.instance]),
       builder: (context, _) {
         final reports = store.all;
+        final canDelete = canDeleteModule('incidents');
         final text = Theme.of(context).textTheme;
 
         return ListView(
@@ -97,9 +129,10 @@ class IncidentsPage extends StatelessWidget {
                               'No incidents filed yet. Use File Incident to '
                               'log one — it appears here and in the GIS '
                               'Recent Community Reports feed.')
-                  : Column(
-                      children: [
-                        for (final r in reports)
+                  : PaginatedColumn<IncidentReport>(
+                      items: reports,
+                      itemLabel: 'entry',
+                      itemBuilder: (context, r) =>
                           Container(
                             margin:
                                 const EdgeInsets.only(bottom: AppSpacing.sm),
@@ -131,6 +164,17 @@ class IncidentsPage extends StatelessWidget {
                                           ? BadgeKind.success
                                           : BadgeKind.danger,
                                     ),
+                                    // Delete: icon-only, right of the status
+                                    // badge and about its size (when allowed).
+                                    if (canDelete)
+                                      Padding(
+                                        padding:
+                                            const EdgeInsets.only(left: 4),
+                                        child: DeleteIconButton(
+                                          size: 18,
+                                          onPressed: () => _delete(context, r),
+                                        ),
+                                      ),
                                   ],
                                 ),
                                 const SizedBox(height: 4),
@@ -205,7 +249,6 @@ class IncidentsPage extends StatelessWidget {
                             ),
                             ),
                           ),
-                      ],
                     ),
             ),
           ],

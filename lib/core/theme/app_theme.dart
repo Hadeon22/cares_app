@@ -12,20 +12,31 @@ import '../constants/app_constants.dart';
 ///    "How can the barangay help you today?" heading on the web portal)
 ///  • Manrope — clean geometric sans for UI and body copy
 abstract class AppTheme {
-  static ThemeData light() {
+  /// Light theme. Callers must have set [AppColors.brightness] to
+  /// [Brightness.light] first — ThemeController does this.
+  static ThemeData light() => _build(dark: false);
+
+  /// Dark theme — the navy hero palette extended across the whole app, so
+  /// it reads as the same government brand rather than a generic grey mode.
+  /// Callers must have set [AppColors.brightness] to [Brightness.dark] first.
+  static ThemeData dark() => _build(dark: true);
+
+  static ThemeData _build({required bool dark}) {
     final base = ThemeData(
       useMaterial3: true,
       colorScheme: ColorScheme.fromSeed(
         seedColor: AppColors.navy,
-        primary: AppColors.navy,
-        onPrimary: AppColors.onNavy,
-        secondary: AppColors.gold,
+        // On dark surfaces navy has nothing left to contrast against, so
+        // gold takes over as the primary and navy stays a surface colour.
+        primary: dark ? AppColors.gold : AppColors.navy,
+        onPrimary: dark ? AppColors.navyDeep : AppColors.onNavy,
+        secondary: dark ? AppColors.goldSoft : AppColors.gold,
         onSecondary: AppColors.navyDeep,
-        tertiary: AppColors.royalBlue,
-        error: AppColors.flagRed,
+        tertiary: dark ? const Color(0xFF6E9BFF) : AppColors.royalBlue,
+        error: dark ? const Color(0xFFFF6B7E) : AppColors.flagRed,
         surface: AppColors.surface,
         onSurface: AppColors.ink,
-        brightness: Brightness.light,
+        brightness: dark ? Brightness.dark : Brightness.light,
       ),
       scaffoldBackgroundColor: AppColors.cream,
     );
@@ -58,7 +69,7 @@ abstract class AppTheme {
         margin: EdgeInsets.zero,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(AppRadii.md),
-          side: const BorderSide(color: AppColors.divider),
+          side: BorderSide(color: AppColors.divider),
         ),
         clipBehavior: Clip.antiAlias,
       ),
@@ -120,7 +131,7 @@ abstract class AppTheme {
         ),
       ),
 
-      dividerTheme: const DividerThemeData(
+      dividerTheme: DividerThemeData(
         color: AppColors.divider,
         thickness: 1,
         space: 1,

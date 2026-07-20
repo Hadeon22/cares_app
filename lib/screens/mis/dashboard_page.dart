@@ -24,6 +24,16 @@ class DashboardPage extends StatefulWidget {
 class _DashboardPageState extends State<DashboardPage> {
   String? _aiSummary;
 
+  @override
+  void initState() {
+    super.initState();
+    // Re-pull the KPIs every time the dashboard opens so the counts are
+    // current — ensureLoaded() only fetches once, which left them stale after
+    // the first visit. (refresh() is a no-op-safe network call.)
+    DashboardStats.instance.refresh();
+    AuditLog.instance.ensureLoaded();
+  }
+
   void _generateAiSummary() {
     showAppToast(context, 'Generating AI summary...',
         icon: Icons.auto_awesome_outlined);
@@ -253,7 +263,7 @@ class _DashboardPageState extends State<DashboardPage> {
 
   static final _outlineStyle = OutlinedButton.styleFrom(
     foregroundColor: AppColors.navy,
-    side: const BorderSide(color: AppColors.divider),
+    side: BorderSide(color: AppColors.divider),
     padding:
         const EdgeInsets.symmetric(horizontal: AppSpacing.md, vertical: 10),
   );

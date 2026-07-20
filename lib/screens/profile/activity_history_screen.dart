@@ -127,7 +127,7 @@ class _ActivityHistoryScreenState extends State<ActivityHistoryScreen> {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    const Icon(Icons.history,
+                    Icon(Icons.history,
                         size: 44, color: AppColors.inkMuted),
                     const SizedBox(height: AppSpacing.md),
                     Text('No activity yet',

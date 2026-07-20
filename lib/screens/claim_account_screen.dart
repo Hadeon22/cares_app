@@ -25,7 +25,6 @@ class _ClaimAccountScreenState extends State<ClaimAccountScreen> {
 
   final _fname = TextEditingController();
   final _lname = TextEditingController();
-  final _mother = TextEditingController();
   final _email = TextEditingController();
   final _mobile = TextEditingController();
   final _pass = TextEditingController();
@@ -40,7 +39,7 @@ class _ClaimAccountScreenState extends State<ClaimAccountScreen> {
 
   @override
   void dispose() {
-    for (final c in [_fname, _lname, _mother, _email, _mobile, _pass, _pass2]) {
+    for (final c in [_fname, _lname, _email, _mobile, _pass, _pass2]) {
       c.dispose();
     }
     super.dispose();
@@ -302,11 +301,6 @@ class _ClaimAccountScreenState extends State<ClaimAccountScreen> {
         value: _purok,
         items: kPuroks,
         onChanged: (v) => setState(() => _purok = v ?? _purok),
-      ),
-      AppTextField(
-        label: "Mother's Maiden Name",
-        controller: _mother,
-        hint: 'For identity verification',
       ),
     ];
   }
