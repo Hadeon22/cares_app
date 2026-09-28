@@ -6,14 +6,44 @@ import '../../data/session.dart';
 import '../../data/stores.dart';
 import '../../screens/services/certificate_request_screen.dart';
 import '../../widgets/app_toast.dart';
+import '../../widgets/certificate_fields_sheet.dart';
+import '../../widgets/certificate_requirements.dart';
 import '../../widgets/form_widgets.dart';
 import '../../widgets/paginator.dart';
 import 'mis_widgets.dart';
 
 /// Certificate Processing module (js/pages/certificates.js) — the live
 /// request queue from the certificate table, with approve action.
-class CertificatesPage extends StatelessWidget {
+class CertificatesPage extends StatefulWidget {
   const CertificatesPage({super.key});
+
+  @override
+  State<CertificatesPage> createState() => _CertificatesPageState();
+}
+
+class _CertificatesPageState extends State<CertificatesPage> {
+  // Search / status / type, matching the web queue's filter row.
+  final _search = TextEditingController();
+  String _status = '';
+  String _typeKey = '';
+
+  @override
+  void dispose() {
+    _search.dispose();
+    super.dispose();
+  }
+
+  List<CertificateRequest> _filtered(List<CertificateRequest> all) {
+    final q = _search.text.trim().toLowerCase();
+    return all.where((r) {
+      final matchQ = q.isEmpty ||
+          r.applicant.toLowerCase().contains(q) ||
+          r.requestNo.toLowerCase().contains(q);
+      return matchQ &&
+          (_status.isEmpty || r.status == _status) &&
+          (_typeKey.isEmpty || r.typeKey == _typeKey);
+    }).toList();
+  }
 
   static const _badges = {
     'pending': BadgeKind.warning,
@@ -28,8 +58,9 @@ class CertificatesPage extends StatelessWidget {
   Future<void> _setStatus(
       BuildContext context, CertificateRequest r, String status,
       {String? remarks}) async {
+    String? sms;
     try {
-      await CertificateStore.instance.setStatus(r, status,
+      sms = await CertificateStore.instance.setStatus(r, status,
           remarks: remarks, accountId: AppSession.instance.accountId);
     } catch (e) {
       if (context.mounted) {
@@ -49,13 +80,28 @@ class CertificatesPage extends StatelessWidget {
       category: AuditCategory.certificate,
     );
     if (context.mounted) {
+      // Issuing or rejecting texts the requester; say whether a text is on
+      // its way, or why not (same wording as the web's certSmsNote).
+      final note = _smsNotes[sms];
       showAppToast(
           context,
           status == 'pending'
               ? '${r.requestNo} moved back to pending.'
-              : '${r.requestNo} $status!');
+              : '${r.requestNo} $status!${note == null ? '' : ' $note'}');
     }
   }
+
+  static const _smsNotes = {
+    'queued': 'Requester will be texted.',
+    'dry-run': 'Requester would be texted (SMS dry run).',
+    'off': 'No text: SMS is off.',
+    'no-number': 'No text: no mobile number on file.',
+    'not-mobile': 'No text: the number on file is not a mobile.',
+    'no-record': 'No text: walk-in with no resident record.',
+    'setting-off': 'No text: the requester turned certificate texts off.',
+    'duplicate': 'Requester was already texted.',
+    'no-key': 'No text: SMS is not set up on the server.',
+  };
 
   /// Reject a request — a remark is required so the requester learns why.
   /// The remark is persisted via [setStatus]'s `remarks` (certificate table
@@ -172,7 +218,24 @@ class CertificatesPage extends StatelessWidget {
         ('Processed At', date(r.processedAt)),
         ('Linked Resident', r.residentId == null ? null : '#${r.residentId}'),
       ],
+      // The documents that came in with the request, checked against what is
+      // typed on the form.
+      extra: [
+        const SizedBox(height: AppSpacing.sm),
+        AttachmentsPanel(request: r),
+      ],
       actions: [
+        if (r.type.isPrintable)
+          TextButton.icon(
+            onPressed: () {
+              Navigator.of(context).pop();
+              // Saved to certificate.form_fields on the server, so what is
+              // typed here is what the web prints — and vice versa.
+              showCertificateFieldsSheet(context, r);
+            },
+            icon: const Icon(Icons.edit_note, size: 16),
+            label: const Text('Certificate details'),
+          ),
         if (r.residentId != null)
           TextButton.icon(
             onPressed: () {
@@ -251,7 +314,7 @@ class CertificatesPage extends StatelessWidget {
     return AnimatedBuilder(
       animation: Listenable.merge([store, DeletePermissions.instance]),
       builder: (context, _) {
-        final requests = store.all;
+        final requests = _filtered(store.all);
         final canDelete = canDeleteModule('certificates');
         final text = Theme.of(context).textTheme;
 
@@ -283,7 +346,47 @@ class CertificatesPage extends StatelessWidget {
               action: '⊕ New Request',
               onAction: () => Navigator.of(context).push(MaterialPageRoute(
                   builder: (_) => const CertificateRequestScreen())),
-              child: store.loading
+              child: Column(
+                children: [
+                  // Search / status / type — the web queue's filter row.
+                  AppTextField(
+                    label: 'Search',
+                    controller: _search,
+                    hint: 'Search by applicant or req. no…',
+                    onChanged: (_) => setState(() {}),
+                  ),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: AppDropdown<String>(
+                          label: 'Status',
+                          value: _status,
+                          items: const ['', 'pending', 'approved', 'issued', 'rejected'],
+                          itemLabel: (v) => v.isEmpty
+                              ? 'All Statuses'
+                              : v[0].toUpperCase() + v.substring(1),
+                          onChanged: (v) => setState(() => _status = v ?? ''),
+                        ),
+                      ),
+                      const SizedBox(width: AppSpacing.sm),
+                      Expanded(
+                        child: AppDropdown<String>(
+                          label: 'Certificate Type',
+                          value: _typeKey,
+                          items: [
+                            '',
+                            for (final t in kCertificateTypes) t.key,
+                          ],
+                          itemLabel: (v) => v.isEmpty
+                              ? 'All Types'
+                              : certificateTypeByKey(v).shortName,
+                          onChanged: (v) => setState(() => _typeKey = v ?? ''),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: AppSpacing.sm),
+                  store.loading
                   ? const Padding(
                       padding: EdgeInsets.all(AppSpacing.lg),
                       child: Center(
@@ -423,6 +526,8 @@ class CertificatesPage extends StatelessWidget {
                                     ),
                                   ),
                             ),
+                ],
+              ),
             ),
           ],
         );

@@ -23,10 +23,18 @@ class AnalyticsPage extends StatelessWidget {
     'medical': 'Medical', 'other': 'Other',
   };
 
+  // Short forms for chart axes — the full names are in kCertificateTypes.
   static const _certLabels = {
     'barangay-clearance': 'Brgy Clearance', 'indigency': 'Indigency',
     'residency': 'Residency', 'solo-parent': 'Solo Parent',
     'good-moral': 'Good Moral', 'business-clearance': 'Business Clearance',
+    'relationship': 'Relationship', 'lot-boundary': 'House on Lot',
+    'property-clearance': 'Property', 'livestock': 'Livestock',
+    'delayed-birth-registration': 'Delayed Birth',
+    'first-time-jobseeker': 'Jobseeker',
+    'livelihood-assistance': 'Livelihood',
+    'assistance-certification': 'City Assistance',
+    'electrical-connection': 'Electrical',
   };
 
   static const _palette = [

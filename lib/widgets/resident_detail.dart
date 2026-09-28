@@ -72,9 +72,10 @@ class ResidentDetailView extends StatelessWidget {
         _row(context, 'Occupation', r.occupation ?? '—'),
         _row(context, 'Voter Status', r.voterStatus ?? '—'),
         _row(context, 'Purok', r.purok ?? '—'),
-        _row(context, 'Household No.', r.householdNo ?? '—'),
         _row(context, 'Address', r.addressText ?? '—'),
-        _row(context, 'Relationship to Head', r.relationshipToHead ?? '—'),
+        // Named, not numbered: the household is a building tagged on the GIS
+        // map, so it reads "Bahay ni Shane".
+        _row(context, 'Household', r.householdName ?? '—'),
         _row(
             context,
             'Classifications',

@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
 
-import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_constants.dart';
 import '../../data/resident_profile.dart';
 import '../../data/session.dart';
 import '../../data/stores.dart';
 import '../../widgets/app_toast.dart';
+import '../../widgets/certificate_requirements.dart';
 import '../../widgets/form_widgets.dart';
 
 /// Certificate Issuance — request form. Mobile version of the web's
@@ -29,14 +29,9 @@ class _CertificateRequestScreenState extends State<CertificateRequestScreen> {
   DateTime? _pickup;
   String _purok = kPuroks.first;
 
-  static const _certIcons = [
-    Icons.assignment_outlined,
-    Icons.work_outline,
-    Icons.home_outlined,
-    Icons.apartment_outlined,
-    Icons.star_outline,
-    Icons.family_restroom_outlined,
-  ];
+  /// Requirement key → the photo chosen for it, held until the request is
+  /// filed (an attachment needs a request to belong to).
+  final Map<String, PendingRequirement> _docs = {};
 
   @override
   void initState() {
@@ -113,6 +108,36 @@ class _CertificateRequestScreenState extends State<CertificateRequestScreen> {
       'Address: $_purok',
     ].join(' · ');
 
+    // Missing requirements are a warning, not a wall: a walk-in can still
+    // bring the paper to the hall, and the barangay would rather have the
+    // request in the queue than turned away at the form.
+    final missing = missingRequirements(_selected, _docs);
+    if (missing.isNotEmpty) {
+      final go = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Submit without these?'),
+          content: Text(
+            'These requirements have no photo attached:\n\n'
+            '${missing.map((m) => "• $m").join("\n")}\n\n'
+            'You can still submit and bring them to the barangay hall, but '
+            'processing will be faster with them attached.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Go back'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('Submit anyway'),
+            ),
+          ],
+        ),
+      );
+      if (go != true || !mounted) return;
+    }
+
     setState(() => _busy = true);
     final session = AppSession.instance;
     final CertificateRequest req;
@@ -131,6 +156,13 @@ class _CertificateRequestScreenState extends State<CertificateRequestScreen> {
       }
       return;
     }
+    // Documents can only be attached once the request exists to hold them. A
+    // failed upload is reported but never undoes the filing.
+    List<String> failedUploads = const [];
+    if (req.id > 0 && _docs.isNotEmpty) {
+      failedUploads = await uploadPending(req, _docs);
+    }
+
     AuditLog.instance.log(
       'CERT_REQUEST',
       '${_selected.name} requested by ${_fname.text.trim()} '
@@ -138,6 +170,26 @@ class _CertificateRequestScreenState extends State<CertificateRequestScreen> {
       category: AuditCategory.certificate,
     );
     if (!mounted) return;
+    if (failedUploads.isNotEmpty) {
+      await showDialog<void>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: Text('Filed as ${req.requestNo}'),
+          content: Text(
+            'These documents did not upload:\n\n'
+            '${failedUploads.map((m) => "• $m").join("\n")}\n\n'
+            'You can bring them to the barangay hall instead.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('OK'),
+            ),
+          ],
+        ),
+      );
+      if (!mounted) return;
+    }
     Navigator.of(context).pop();
     if (req.requestNo == kPendingSyncRef) {
       showAppToast(
@@ -169,26 +221,24 @@ class _CertificateRequestScreenState extends State<CertificateRequestScreen> {
                 'information, and submit your request. Processing typically '
                 'takes 1–3 working days.',
           ),
-          const FieldLabel('Select Certificate Type'),
-          GridView.count(
-            crossAxisCount: 2,
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            mainAxisSpacing: AppSpacing.sm,
-            crossAxisSpacing: AppSpacing.sm,
-            childAspectRatio: 2.4,
-            children: [
-              for (var i = 0; i < kCertificateTypes.length; i++)
-                _certCard(kCertificateTypes[i], _certIcons[i]),
-            ],
+          AppDropdown<String>(
+            label: 'Select Certificate Type',
+            value: _selected.key,
+            items: [for (final t in kCertificateTypes) t.key],
+            itemLabel: (k) => certificateTypeByKey(k).name,
+            onChanged: (k) => setState(() {
+              if (k == null) return;
+              _selected = certificateTypeByKey(k);
+              // Each certificate asks for different documents.
+              _docs.clear();
+            }),
           ),
-          const SizedBox(height: AppSpacing.md),
-          Align(
-            alignment: Alignment.centerLeft,
-            child: StatusBadge('Selected: ${_selected.shortName}',
-                kind: BadgeKind.gold),
+          const SizedBox(height: AppSpacing.sm),
+          RequirementPicker(
+            type: _selected,
+            chosen: _docs,
+            onChanged: () => setState(() {}),
           ),
-          const SizedBox(height: AppSpacing.md),
           Row(
             children: [
               Expanded(
@@ -256,44 +306,4 @@ class _CertificateRequestScreenState extends State<CertificateRequestScreen> {
     );
   }
 
-  Widget _certCard(CertificateType type, IconData icon) {
-    final selected = _selected == type;
-    return InkWell(
-      borderRadius: BorderRadius.circular(AppRadii.sm),
-      onTap: () => setState(() => _selected = type),
-      child: AnimatedContainer(
-        duration: AppDurations.fast,
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-        decoration: BoxDecoration(
-          color: selected ? AppColors.goldSoft : AppColors.surface,
-          borderRadius: BorderRadius.circular(AppRadii.sm),
-          border: Border.all(
-            color: selected ? AppColors.gold : AppColors.divider,
-            width: selected ? 1.6 : 1,
-          ),
-        ),
-        child: Row(
-          children: [
-            Icon(icon,
-                size: 20,
-                color: selected ? AppColors.goldDeep : AppColors.inkMuted),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Text(
-                type.shortName,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                      color: AppColors.ink,
-                      fontWeight:
-                          selected ? FontWeight.w800 : FontWeight.w600,
-                      height: 1.2,
-                    ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
 }

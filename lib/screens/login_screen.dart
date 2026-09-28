@@ -172,7 +172,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         alignment: WrapAlignment.center,
                         crossAxisAlignment: WrapCrossAlignment.center,
                         children: [
-                          Text('New resident? ',
+                          Text('No account yet? ',
                               style: text.bodySmall
                                   ?.copyWith(color: AppColors.inkMuted)),
                           InkWell(
@@ -181,7 +181,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                   builder: (_) => const ClaimAccountScreen()),
                             ),
                             child: Text(
-                              'Claim your account →',
+                              'Apply for an account →',
                               style: text.bodySmall?.copyWith(
                                 color: AppColors.goldDeep,
                                 fontWeight: FontWeight.w800,

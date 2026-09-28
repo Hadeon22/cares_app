@@ -27,6 +27,9 @@ const List<String> kPuroks = [
   'Purok 3 – Sitio Malinis',
   'Purok 4 – Sitio Mapayapa',
   'Purok 5 – Sitio Bagong Pag-Asa',
+  'Purok 6',
+  'Purok 7',
+  'Purok 8',
 ];
 
 const List<String> kResidentCategories = [
@@ -105,6 +108,7 @@ class ResidentRecord {
     this.category = '',
     this.cats = const [],
     this.status = 'Active',
+    this.photo,
   });
 
   factory ResidentRecord.fromJson(Map<String, dynamic> j) {
@@ -120,6 +124,7 @@ class ResidentRecord {
       category: cats.isNotEmpty ? cats.first : '',
       cats: cats,
       status: (j['status'] ?? 'Unclaimed') as String,
+      photo: j['photo'] as String?,
     );
   }
 
@@ -130,6 +135,10 @@ class ResidentRecord {
   final String category; // "" | Senior Citizen | PWD | ...
   final List<String> cats; // all classifications
   final String status; // Active (claimed) | Unclaimed
+
+  /// Profile photo as a base64 data URL, or null. The directory list shows it
+  /// as the row avatar and falls back to [initials].
+  final String? photo;
 
   String get ageLabel => age == null ? '—' : '$age';
 
@@ -174,29 +183,380 @@ class ResidentStore extends ChangeNotifier with ApiStore {
   }
 }
 
-/// ── Certificate types (index.html cert-type-grid) ───────────
+/// ── Certificate types, requirements and form fields ─────────
+/// The barangay's certificate catalogue, mirroring the web's
+/// js/certificate-types.js (types + requirements) and js/certificate-templates.js
+/// (the blanks on each printed form).
+///
+/// This block is GENERATED from those two files rather than retyped — the web
+/// renders the actual A4 sheet, so it stays the source of truth and this is its
+/// mirror. Regenerate after changing either of them; see the note in
+/// docs/certificates.md. Slugs must also match the server's
+/// routes/certificates.js TYPE_LABELS and the DB CHECK constraint.
+
+/// A document the requester is asked to photograph so staff can check a claim
+/// the barangay cannot verify from its own records.
+class CertRequirement {
+  const CertRequirement(
+    this.key,
+    this.label, {
+    this.required = false,
+    this.sensitivity = 'normal',
+    this.note,
+  });
+
+  final String key;
+  final String label;
+  final bool required;
+
+  /// 'health' for medical/death documents — sensitive personal information
+  /// under RA 10173 §3(l), which the server purges sooner (30 days, not 90).
+  final String sensitivity;
+  final String? note;
+
+  bool get isHealth => sensitivity == 'health';
+}
+
+/// One blank on the printed form. [options] non-null means a dropdown.
+class CertField {
+  const CertField(
+    this.key,
+    this.label, {
+    this.group,
+    this.options,
+    this.hint,
+  });
+
+  final String key;
+  final String label;
+  final String? group;
+  final List<String>? options;
+  final String? hint;
+
+  bool get isChoice => options != null && options!.isNotEmpty;
+}
+
 class CertificateType {
-  const CertificateType(this.key, this.name, this.shortName);
+  const CertificateType(
+    this.key,
+    this.name,
+    this.shortName, {
+    this.requirements = const [],
+    this.fields = const [],
+  });
 
   /// DB slug (certificate.type CHECK constraint).
   final String key;
   final String name;
   final String shortName;
+  final List<CertRequirement> requirements;
+
+  /// The blanks on the printed form. Every type has one as of the Business
+  /// Clearance form (July 2026); a type added without one can still be
+  /// requested, it just has nothing to fill in.
+  final List<CertField> fields;
+
+  bool get isPrintable => fields.isNotEmpty;
 }
 
 const List<CertificateType> kCertificateTypes = [
-  CertificateType('barangay-clearance', 'Barangay Clearance',
-      'Barangay Clearance'),
-  CertificateType('indigency', 'Certificate of Indigency',
-      'Certificate of Indigency'),
-  CertificateType('residency', 'Certificate of Residency',
-      'Certificate of Residency'),
-  CertificateType('business-clearance', 'Business Clearance',
-      'Business Clearance'),
-  CertificateType('good-moral', 'Certificate of Good Moral',
-      'Good Moral Certificate'),
-  CertificateType('solo-parent', 'Certificate of Solo Parent',
-      'Solo Parent Certificate'),
+  CertificateType(
+    'barangay-clearance',
+    'Certificate of Barangay Clearance',
+    'Barangay Clearance',
+    requirements: [
+      CertRequirement('valid-id', 'Valid ID', required: true),
+    ],
+    fields: [
+      CertField('honorific', 'Mr. / Mrs. / Ms.', group: 'Applicant', options: ['Mr./Mrs./Ms.', 'Mr.', 'Mrs.', 'Ms.']),
+      CertField('name', 'Name of applicant', group: 'Applicant', hint: 'JUAN P. DELA CRUZ'),
+      CertField('age', 'Age', group: 'Applicant', hint: '32'),
+      CertField('civil_status', 'Civil status', group: 'Applicant', hint: 'single/married/widow'),
+      CertField('purok', 'Purok no.', group: 'Applicant', hint: '3'),
+      CertField('pronoun', 'Refer to applicant as', group: 'Applicant', options: ['He', 'She', 'He/ She']),
+      CertField('day', 'Issued this…', group: 'Issuance', hint: '30th'),
+      CertField('month', 'Month', group: 'Issuance', options: ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']),
+      CertField('year', 'Year', group: 'Issuance'),
+      CertField('purpose', 'Purpose', group: 'Issuance', hint: 'e.g. Employment requirement'),
+    ],
+  ),
+  CertificateType(
+    'residency',
+    'Certificate of Barangay Residency',
+    'Barangay Residency',
+    requirements: [
+      CertRequirement('valid-id', 'Valid ID', required: true),
+    ],
+    fields: [
+      CertField('name', 'Name of applicant', group: 'Applicant', hint: 'JUAN P. DELA CRUZ'),
+      CertField('age', 'Age', group: 'Applicant', hint: '32'),
+      CertField('birthdate', 'Born on', group: 'Applicant'),
+      CertField('birthplace', 'Born at', group: 'Applicant'),
+      CertField('child_of', 'Daughter / son of', group: 'Applicant'),
+      CertField('father', 'Father\'s name', group: 'Applicant'),
+      CertField('mother', 'Mother\'s name', group: 'Applicant'),
+      CertField('purok', 'Purok no.', group: 'Applicant', hint: '3'),
+      CertField('since', 'Resident since', group: 'Applicant'),
+      CertField('day', 'Issued this…', group: 'Issuance', hint: '30th'),
+      CertField('month', 'Month', group: 'Issuance', options: ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']),
+      CertField('year', 'Year', group: 'Issuance'),
+      CertField('purpose', 'Purpose', group: 'Issuance', hint: 'e.g. Employment requirement'),
+    ],
+  ),
+  CertificateType(
+    'indigency',
+    'Certificate of Indigency',
+    'Indigency',
+    requirements: [
+      CertRequirement('valid-id', 'Valid ID', required: true),
+    ],
+    fields: [
+      CertField('honorific', 'Mr. / Mrs. / Ms.', group: 'Applicant', options: ['Mr./Mrs./Ms.', 'Mr.', 'Mrs.', 'Ms.']),
+      CertField('name', 'Name of applicant', group: 'Applicant', hint: 'JUAN P. DELA CRUZ'),
+      CertField('age', 'Age', group: 'Applicant', hint: '32'),
+      CertField('civil_status', 'Civil status', group: 'Applicant', hint: 'single/married/widow'),
+      CertField('purok', 'Purok no.', group: 'Applicant', hint: '3'),
+      CertField('day', 'Issued this…', group: 'Issuance', hint: '30th'),
+      CertField('month', 'Month', group: 'Issuance', options: ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']),
+      CertField('year', 'Year', group: 'Issuance'),
+      CertField('purpose', 'Purpose', group: 'Issuance', hint: 'e.g. Employment requirement'),
+    ],
+  ),
+  CertificateType(
+    'good-moral',
+    'Certificate of Good Moral',
+    'Good Moral',
+    requirements: [
+      CertRequirement('valid-id', 'Valid ID', required: true),
+    ],
+    fields: [
+      CertField('name', 'Name of applicant', group: 'Applicant', hint: 'JUAN P. DELA CRUZ'),
+      CertField('status', '…said to be a', group: 'Applicant', hint: 'e.g. resident'),
+      CertField('functionary', '…of a barangay functionary named', group: 'Applicant', hint: 'Full name'),
+      CertField('occupation', 'Working as', group: 'Applicant'),
+      CertField('since', 'Since', group: 'Applicant'),
+      CertField('pronoun', 'Refer to applicant as', group: 'Applicant', options: ['He', 'She', 'He/ She']),
+      CertField('requested_by', 'Issued upon the request of', group: 'Issuance'),
+      CertField('day', 'Issued this…', group: 'Issuance', hint: '30th'),
+      CertField('month', 'Month', group: 'Issuance', options: ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']),
+      CertField('year', 'Year', group: 'Issuance'),
+    ],
+  ),
+  CertificateType(
+    'solo-parent',
+    'Barangay Certification for Solo Parent',
+    'Solo Parent',
+    requirements: [
+      CertRequirement('valid-id', 'Valid ID', required: true),
+      CertRequirement('child-birth', 'Birth certificate of the child / children', required: true),
+      CertRequirement('solo-parent-proof', 'Proof of solo parent status', required: true, note: 'Death certificate of the spouse, or an affidavit of separation / abandonment.'),
+    ],
+    fields: [
+      CertField('honorific', 'Mr. / Mrs. / Ms.', group: 'Applicant', options: ['Mr./Mrs./Ms.', 'Mr.', 'Mrs.', 'Ms.']),
+      CertField('name', 'Name of applicant', group: 'Applicant', hint: 'JUAN P. DELA CRUZ'),
+      CertField('purok', 'Purok no.', group: 'Applicant', hint: '3'),
+      CertField('pronoun', 'Refer to applicant as', group: 'Applicant', options: ['He', 'She', 'He/ She']),
+      CertField('children', 'No. of child / children', group: 'Applicant'),
+      CertField('solo_since', 'Solo parent since', group: 'Applicant'),
+      CertField('day', 'Issued this…', group: 'Issuance', hint: '30th'),
+      CertField('month', 'Month', group: 'Issuance', options: ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']),
+      CertField('year', 'Year', group: 'Issuance'),
+      CertField('purpose', 'Purpose', group: 'Issuance', hint: 'e.g. Employment requirement'),
+    ],
+  ),
+  CertificateType(
+    'relationship',
+    'Certificate of Relationship',
+    'Relationship',
+    requirements: [
+      CertRequirement('valid-id', 'Valid ID', required: true),
+    ],
+    fields: [
+      CertField('honorific', 'Mr. / Mrs. / Ms.', group: 'Applicant', options: ['Mr./Mrs./Ms.', 'Mr.', 'Mrs.', 'Ms.']),
+      CertField('name', 'Name of applicant', group: 'Applicant', hint: 'JUAN P. DELA CRUZ'),
+      CertField('relation', 'Is the…', group: 'Applicant', hint: 'e.g. mother'),
+      CertField('relative', '…of', group: 'Applicant', hint: 'Full name'),
+      CertField('purok', 'Purok no.', group: 'Applicant', hint: '3'),
+      CertField('day', 'Issued this…', group: 'Issuance', hint: '30th'),
+      CertField('month', 'Month', group: 'Issuance', options: ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']),
+      CertField('year', 'Year', group: 'Issuance'),
+      CertField('purpose', 'Purpose', group: 'Issuance', hint: 'e.g. Employment requirement'),
+    ],
+  ),
+  CertificateType(
+    'business-clearance',
+    'Business Clearance',
+    'Business Clearance',
+    requirements: [
+      CertRequirement('valid-id', 'Valid ID', required: true),
+      CertRequirement('tax-declaration', 'Tax Declaration', required: true, note: 'For the place the business operates from.'),
+    ],
+    fields: [
+      CertField('name', 'Name of applicant', group: 'Applicant', hint: 'JUAN P. DELA CRUZ'),
+      CertField('purok', 'Purok no.', group: 'Applicant', hint: '3'),
+      CertField('business_name', 'Business named', group: 'Business', hint: 'e.g. DELA CRUZ SARI-SARI STORE'),
+      CertField('requested_by', 'Issued upon the request of', group: 'Issuance'),
+      CertField('day', 'Issued this…', group: 'Issuance', hint: '30th'),
+      CertField('month', 'Month', group: 'Issuance', options: ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']),
+      CertField('year', 'Year', group: 'Issuance'),
+    ],
+  ),
+  CertificateType(
+    'first-time-jobseeker',
+    'Barangay Certification — First Time Jobseeker (RA 11261)',
+    'First Time Jobseeker',
+    requirements: [
+      CertRequirement('valid-id', 'Valid ID', required: true),
+    ],
+    fields: [
+      CertField('honorific', 'Mr. / Ms.', group: 'Applicant', options: ['Mr./Ms.', 'Mr.', 'Ms.']),
+      CertField('name', 'Name of applicant', group: 'Applicant', hint: 'JUAN P. DELA CRUZ'),
+      CertField('residency_length', 'Resident for (years/months)', group: 'Applicant'),
+      CertField('validity', 'Valid only until', group: 'Issuance'),
+      CertField('day', 'Signed this…', group: 'Issuance', hint: '30th'),
+      CertField('month', 'Month', group: 'Issuance', options: ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']),
+      CertField('year', 'Year', group: 'Issuance'),
+    ],
+  ),
+  CertificateType(
+    'delayed-birth-registration',
+    'Barangay Certification — Delayed Birth Registration',
+    'Delayed Birth Reg.',
+    requirements: [
+      CertRequirement('valid-id', 'Valid ID of the requester', required: true),
+      CertRequirement('baptismal', 'Baptismal certificate', required: false, note: 'Any early record of the birth helps — the PSA will not act without supporting documents.'),
+      CertRequirement('school-records', 'School records', required: false),
+      CertRequirement('affidavit', 'Affidavit of two disinterested persons', required: true),
+    ],
+    fields: [
+      CertField('name', 'Name of applicant (resident)', group: 'Applicant', hint: 'JUAN P. DELA CRUZ'),
+      CertField('age', 'Age', group: 'Applicant', hint: '32'),
+      CertField('child_name', 'Name of child', group: 'Child'),
+      CertField('child_birthdate', 'Date of birth', group: 'Child'),
+      CertField('child_birthplace', 'Place of birth', group: 'Child'),
+      CertField('father', 'Name of father', group: 'Child'),
+      CertField('mother', 'Name of mother', group: 'Child'),
+      CertField('day', 'Issued this…', group: 'Issuance', hint: '30th'),
+      CertField('month', 'Month', group: 'Issuance', options: ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']),
+      CertField('year', 'Year', group: 'Issuance'),
+    ],
+  ),
+  CertificateType(
+    'assistance-certification',
+    'Certification — City Government Assistance',
+    'City Assistance',
+    requirements: [
+      CertRequirement('valid-id', 'Valid ID', required: true),
+      CertRequirement('medical-document', 'Medical abstract, hospital bill or prescription', required: false, sensitivity: 'health', note: 'For medical assistance. Kept 30 days after the request closes, then deleted.'),
+      CertRequirement('death-certificate', 'Death certificate', required: false, sensitivity: 'health', note: 'For burial assistance. Kept 30 days after the request closes, then deleted.'),
+    ],
+    fields: [
+      CertField('assistance', 'Applying for … Assistance', group: 'Assistance', hint: 'e.g. Medical'),
+      CertField('name', 'Name', group: 'Identifying information', hint: 'JUAN P. DELA CRUZ'),
+      CertField('age', 'Age', group: 'Identifying information', hint: '32'),
+      CertField('birthdate', 'Birthdate', group: 'Identifying information'),
+      CertField('birthplace', 'Birthplace', group: 'Identifying information'),
+      CertField('civil_status', 'Civil status', group: 'Identifying information', hint: 'single/married/widow'),
+      CertField('purok', 'Purok', group: 'Identifying information', hint: '3'),
+      CertField('day', 'Issued this…', group: 'Issuance', hint: '30th'),
+      CertField('month', 'Month', group: 'Issuance', options: ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']),
+      CertField('year', 'Year', group: 'Issuance'),
+    ],
+  ),
+  CertificateType(
+    'livelihood-assistance',
+    'Certification — Sustainable Livelihood Assistance',
+    'Livelihood Assistance',
+    requirements: [
+      CertRequirement('valid-id', 'Valid ID', required: true),
+    ],
+    fields: [
+      CertField('name', 'Name of applicant', group: 'Applicant', hint: 'JUAN P. DELA CRUZ'),
+      CertField('purok', 'Purok no.', group: 'Applicant', hint: '3'),
+      CertField('birthdate', 'Born on', group: 'Applicant'),
+      CertField('age', 'Age', group: 'Applicant', hint: '32'),
+      CertField('day', 'Issued this…', group: 'Issuance', hint: '30th'),
+      CertField('month', 'Month', group: 'Issuance', options: ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']),
+      CertField('year', 'Year', group: 'Issuance'),
+    ],
+  ),
+  CertificateType(
+    'electrical-connection',
+    'Certification — Electrical Connection (MERALCO)',
+    'Electrical Connection',
+    requirements: [
+      CertRequirement('valid-id', 'Valid ID', required: true),
+      CertRequirement('tax-declaration', 'Tax Declaration', required: true, note: 'Its number is printed on the certification, which also states there is no land title.'),
+    ],
+    fields: [
+      CertField('honorific', 'Mr. / Ms. / Mrs.', group: 'Applicant', options: ['Mr./Ms./Mrs.', 'Mr.', 'Ms.', 'Mrs.']),
+      CertField('name', 'Name of applicant', group: 'Applicant', hint: 'JUAN P. DELA CRUZ'),
+      CertField('since', 'Occupant since', group: 'Applicant'),
+      CertField('tax_dec', 'Tax Declaration No.', group: 'Property'),
+      CertField('requested_by', 'Issued upon the request of', group: 'Issuance'),
+      CertField('day', 'Issued this…', group: 'Issuance', hint: '30th'),
+      CertField('month', 'Month', group: 'Issuance', options: ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']),
+      CertField('year', 'Year', group: 'Issuance'),
+    ],
+  ),
+  CertificateType(
+    'property-clearance',
+    'Certification — Property Clearance',
+    'Property Clearance',
+    requirements: [
+      CertRequirement('valid-id', 'Valid ID', required: true),
+      CertRequirement('tax-declaration', 'Tax Declaration', required: true, note: 'Both the Tax Declaration and Property Identification numbers are printed on it.'),
+    ],
+    fields: [
+      CertField('tax_dec', 'Tax Declaration No.', group: 'Property'),
+      CertField('property_id', 'Property Identification No.', group: 'Property'),
+      CertField('honorific', 'Owner — Mr. / Mrs. / Ms.', group: 'Property', options: ['Mr./Mrs./Ms.', 'Mr.', 'Mrs.', 'Ms.']),
+      CertField('name', 'Owned by', group: 'Property', hint: 'JUAN P. DELA CRUZ'),
+      CertField('req_honorific', 'Requested by — Mr. / Mrs. / Ms.', group: 'Issuance', options: ['Mr./Mrs./Ms.', 'Mr.', 'Mrs.', 'Ms.']),
+      CertField('requested_by', 'Issued upon the request of', group: 'Issuance'),
+      CertField('requirement', 'For… (requirements)', group: 'Issuance'),
+      CertField('day', 'Issued this…', group: 'Issuance', hint: '30th'),
+      CertField('month', 'Month', group: 'Issuance', options: ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']),
+      CertField('year', 'Year', group: 'Issuance'),
+    ],
+  ),
+  CertificateType(
+    'lot-boundary',
+    'Certification — House on Another\'s Lot',
+    'House on Lot',
+    requirements: [
+      CertRequirement('valid-id', 'Valid ID', required: true),
+      CertRequirement('tax-declaration', 'Tax Declaration of the lot', required: true, note: 'The certification names the lot owner and repeats the declaration number.'),
+    ],
+    fields: [
+      CertField('name', 'Name of applicant', group: 'Applicant', hint: 'JUAN P. DELA CRUZ'),
+      CertField('lot_owner', 'Lot owned by', group: 'Property'),
+      CertField('boundary', 'Located at the boundary of', group: 'Property'),
+      CertField('tax_dec', 'Tax Declaration No.', group: 'Property'),
+      CertField('day', 'Issued this…', group: 'Issuance', hint: '30th'),
+      CertField('month', 'Month', group: 'Issuance', options: ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']),
+      CertField('year', 'Year', group: 'Issuance'),
+    ],
+  ),
+  CertificateType(
+    'livestock',
+    'Certification — Livestock for Slaughter',
+    'Livestock',
+    requirements: [
+      CertRequirement('valid-id', 'Valid ID', required: true),
+      CertRequirement('ownership-proof', 'Proof of ownership of the livestock', required: false),
+    ],
+    fields: [
+      CertField('name', 'Name of applicant', group: 'Applicant', hint: 'JUAN P. DELA CRUZ'),
+      CertField('heads', 'No. of heads', group: 'Livestock'),
+      CertField('animal', 'Hogs / cattle', group: 'Livestock'),
+      CertField('slaughterhouse', 'Delivered to (slaughterhouse)', group: 'Livestock'),
+      CertField('hauler', 'Hauled by', group: 'Livestock'),
+      CertField('day', 'Issued this…', group: 'Issuance', hint: '30th'),
+      CertField('month', 'Month', group: 'Issuance', options: ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']),
+      CertField('year', 'Year', group: 'Issuance'),
+    ],
+  ),
 ];
 
 CertificateType certificateTypeByKey(String key) =>
@@ -217,7 +577,9 @@ class CertificateRequest {
     this.remarks,
     this.processedByName,
     this.processedAt,
-  });
+    Map<String, String>? formFields,
+    this.attachmentCount = 0,
+  }) : formFields = formFields ?? <String, String>{};
 
   factory CertificateRequest.fromJson(Map<String, dynamic> j) =>
       CertificateRequest(
@@ -233,6 +595,8 @@ class CertificateRequest {
         processedAt: j['processed_at'] == null
             ? null
             : _parseTs(j['processed_at']),
+        formFields: _formFieldsFromJson(j['form_fields']),
+        attachmentCount: (j['attachment_count'] as int?) ?? 0,
         createdAt: _parseTs(j['created_at']),
       );
 
@@ -254,7 +618,94 @@ class CertificateRequest {
   final int? residentId;
   final DateTime createdAt;
 
-  String get typeLabel => certificateTypeByKey(typeKey).name;
+  /// What goes in the blanks on the printed form (certificate.form_fields).
+  /// Filled by the requester when they file and by staff before printing, on
+  /// whichever device is to hand — so it lives on the row, not on the device.
+  final Map<String, String> formFields;
+
+  /// How many requirement documents are attached. Metadata only; the files
+  /// themselves are fetched one at a time.
+  int attachmentCount;
+
+  CertificateType get type => certificateTypeByKey(typeKey);
+  String get typeLabel => type.name;
+}
+
+/// certificate.form_fields comes back as a JSON object of strings; anything
+/// else on the row is ignored rather than crashing the list.
+Map<String, String> _formFieldsFromJson(Object? raw) {
+  if (raw is! Map) return <String, String>{};
+  final out = <String, String>{};
+  raw.forEach((k, v) {
+    if (v != null) out[k.toString()] = v.toString();
+  });
+  return out;
+}
+
+/// One requirement document attached to a request (certificate_attachment).
+/// The file itself is not carried here — [available] says whether it can still
+/// be fetched, which turns false once the retention purge has run.
+class CertificateAttachment {
+  CertificateAttachment({
+    required this.id,
+    required this.requirementKey,
+    required this.label,
+    required this.mimeType,
+    required this.byteSize,
+    required this.uploadedAt,
+    this.fileName,
+    this.sensitivity = 'normal',
+    this.retentionHold = false,
+    this.purgeAfter,
+    this.purgedAt,
+    this.available = true,
+    this.dataUrl,
+  });
+
+  factory CertificateAttachment.fromJson(Map<String, dynamic> j) =>
+      CertificateAttachment(
+        id: j['id'] as int,
+        requirementKey: (j['requirement_key'] ?? '') as String,
+        label: (j['label'] ?? '') as String,
+        fileName: j['file_name'] as String?,
+        mimeType: (j['mime_type'] ?? 'image/jpeg') as String,
+        byteSize: (j['byte_size'] as int?) ?? 0,
+        sensitivity: (j['sensitivity'] ?? 'normal') as String,
+        uploadedAt: _parseTs(j['uploaded_at']),
+        retentionHold: (j['retention_hold'] as bool?) ?? false,
+        purgeAfter:
+            j['purge_after'] == null ? null : _parseTs(j['purge_after']),
+        purgedAt: j['purged_at'] == null ? null : _parseTs(j['purged_at']),
+        available: (j['available'] as bool?) ?? (j['data_url'] != null),
+        dataUrl: j['data_url'] as String?,
+      );
+
+  final int id;
+  final String requirementKey;
+  final String label;
+  final String? fileName;
+  final String mimeType;
+  final int byteSize;
+  final String sensitivity;
+  final DateTime uploadedAt;
+
+  /// Suspends the retention purge — for a contested request.
+  bool retentionHold;
+
+  /// When the file is due to be deleted, once the request has closed.
+  DateTime? purgeAfter;
+
+  /// When it actually was. The row stays as the record that a document was
+  /// held and disposed of; only the file goes.
+  final DateTime? purgedAt;
+
+  final bool available;
+
+  /// Only populated by [CertificateStore.attachment] — the list omits it.
+  final String? dataUrl;
+
+  bool get isHealth => sensitivity == 'health';
+  bool get isPdf => mimeType == 'application/pdf';
 }
 
 class CertificateStore extends ChangeNotifier with ApiStore {
@@ -291,6 +742,7 @@ class CertificateStore extends ChangeNotifier with ApiStore {
     String purpose = '',
     int? residentId,
     int? accountId,
+    Map<String, String>? formFields,
   }) async {
     final body = {
       'type': typeKey,
@@ -298,6 +750,8 @@ class CertificateStore extends ChangeNotifier with ApiStore {
       if (purpose.isNotEmpty) 'purpose': purpose,
       if (residentId != null) 'resident_id': residentId,
       if (accountId != null) 'account_id': accountId,
+      if (formFields != null && formFields.isNotEmpty)
+        'form_fields': formFields,
     };
     final Map<String, dynamic> res;
     try {
@@ -314,6 +768,7 @@ class CertificateStore extends ChangeNotifier with ApiStore {
         typeKey: typeKey,
         purpose: purpose,
         residentId: residentId,
+        formFields: formFields,
         createdAt: DateTime.now(),
       );
     }
@@ -324,6 +779,7 @@ class CertificateStore extends ChangeNotifier with ApiStore {
       typeKey: typeKey,
       purpose: purpose,
       residentId: residentId,
+      formFields: formFields,
       createdAt: _parseTs(res['created_at']),
     );
     _requests.insert(0, req);
@@ -341,7 +797,9 @@ class CertificateStore extends ChangeNotifier with ApiStore {
   }
 
   /// Move a request through the pipeline (approve / issue / reject).
-  Future<void> setStatus(CertificateRequest r, String status,
+  /// Returns what happened to the requester's text message, if one was due
+  /// (issued / rejected): 'queued', 'dry-run', 'no-number', … or null.
+  Future<String?> setStatus(CertificateRequest r, String status,
       {String? remarks, int? accountId}) async {
     final prev = r.status;
     final prevRemarks = r.remarks;
@@ -349,17 +807,138 @@ class CertificateStore extends ChangeNotifier with ApiStore {
     if (remarks != null) r.remarks = remarks;
     notifyListeners();
     try {
-      await ApiClient.instance.patch('/api/certificates/${r.id}', {
+      final res = await ApiClient.instance.patch('/api/certificates/${r.id}', {
         'status': status,
         if (remarks != null) 'remarks': remarks,
         if (accountId != null) 'account_id': accountId,
       });
+      final sms = res is Map ? res['sms'] : null;
+      return sms is Map ? sms['outcome'] as String? : null;
     } catch (_) {
       r.status = prev;
       r.remarks = prevRemarks;
       notifyListeners();
       rethrow;
     }
+  }
+
+  /// Re-read one request from the server and fold it back into the cached
+  /// list. The queue is fetched once and then held, so anything staff changed
+  /// on the web — a status, the blanks, a new document — is invisible here
+  /// until something asks. Called before editing, so a phone never saves over
+  /// newer values it never saw.
+  Future<CertificateRequest> reload(int id) async {
+    final fresh = CertificateRequest.fromJson(
+        await ApiClient.instance.get('/api/certificates/$id')
+            as Map<String, dynamic>);
+    final i = _requests.indexWhere((r) => r.id == id);
+    if (i >= 0) {
+      _requests[i] = fresh;
+    } else {
+      _requests.insert(0, fresh);
+    }
+    notifyListeners();
+    return fresh;
+  }
+
+  // ── The blanks on the printed form ──────────────────────────────────────
+  /// Save what goes in the blanks. Kept on the row rather than the device
+  /// because the requester types on a phone and staff print from the web —
+  /// PUT rather than PATCH so this never moves the request's status.
+  Future<void> saveFields(CertificateRequest r, Map<String, String> fields,
+      {int? accountId}) async {
+    final prev = Map<String, String>.from(r.formFields);
+    r.formFields
+      ..clear()
+      ..addAll(fields);
+    notifyListeners();
+    try {
+      await ApiClient.instance.put('/api/certificates/${r.id}/fields', {
+        'form_fields': fields,
+        if (accountId != null) 'account_id': accountId,
+      });
+    } catch (_) {
+      r.formFields
+        ..clear()
+        ..addAll(prev);
+      notifyListeners();
+      rethrow;
+    }
+  }
+
+  // ── Requirement documents ───────────────────────────────────────────────
+  /// Metadata for everything attached to a request. Never carries the files.
+  Future<List<CertificateAttachment>> attachments(int certificateId) async {
+    final rows = await ApiClient.instance
+        .get('/api/certificates/$certificateId/attachments') as List;
+    return rows
+        .map((r) =>
+            CertificateAttachment.fromJson(r as Map<String, dynamic>))
+        .toList();
+  }
+
+  /// One document *with* its file — fetched deliberately, one at a time,
+  /// because opening someone's ID or hospital bill should be an explicit act.
+  /// Throws [ApiException] with 410 once the retention purge has removed it.
+  Future<CertificateAttachment> attachment(
+          int certificateId, int attachmentId) async =>
+      CertificateAttachment.fromJson(await ApiClient.instance
+              .get('/api/certificates/$certificateId/attachments/$attachmentId')
+          as Map<String, dynamic>);
+
+  /// Attach (or replace) the document answering one requirement.
+  Future<CertificateAttachment> upload({
+    required CertificateRequest request,
+    required String requirementKey,
+    required String label,
+    required String dataUrl,
+    String? fileName,
+    String sensitivity = 'normal',
+    int? accountId,
+  }) async {
+    final res = await ApiClient.instance
+        .post('/api/certificates/${request.id}/attachments', {
+      'requirement_key': requirementKey,
+      'label': label,
+      'data_url': dataUrl,
+      'sensitivity': sensitivity,
+      if (fileName != null) 'file_name': fileName,
+      if (accountId != null) 'account_id': accountId,
+    }) as Map<String, dynamic>;
+    // One file per requirement: a re-upload replaces rather than adds.
+    final added = CertificateAttachment.fromJson(res);
+    request.attachmentCount = (await attachments(request.id)).length;
+    notifyListeners();
+    return added;
+  }
+
+  /// Suspend or resume the retention purge for one document.
+  Future<void> setRetentionHold(
+      int certificateId, CertificateAttachment a, bool hold,
+      {int? accountId}) async {
+    final prev = a.retentionHold;
+    a.retentionHold = hold;
+    notifyListeners();
+    try {
+      await ApiClient.instance.patch(
+          '/api/certificates/$certificateId/attachments/${a.id}', {
+        'retention_hold': hold,
+        if (accountId != null) 'account_id': accountId,
+      });
+    } catch (_) {
+      a.retentionHold = prev;
+      notifyListeners();
+      rethrow;
+    }
+  }
+
+  Future<void> deleteAttachment(
+      CertificateRequest r, CertificateAttachment a, {int? accountId}) async {
+    final path = '/api/certificates/${r.id}/attachments/${a.id}';
+    await ApiClient.instance
+        .delete(accountId == null ? path : '$path?account_id=$accountId');
+    if (r.attachmentCount > 0) r.attachmentCount--;
+    notifyListeners();
   }
 }
 
@@ -391,6 +970,8 @@ class ResidentEditRequest {
     required this.changes,
     required this.current,
     required this.createdAt,
+    this.reason,
+    this.purok,
     this.status = 'pending',
     this.remarks,
     this.processedAt,
@@ -404,6 +985,8 @@ class ResidentEditRequest {
         residentName: (j['resident_name'] ?? '') as String,
         changes: (j['changes'] as Map? ?? const {}).cast<String, dynamic>(),
         current: (j['current'] as Map? ?? const {}).cast<String, dynamic>(),
+        reason: j['reason'] as String?,
+        purok: j['purok'] as String?,
         status: (j['status'] ?? 'pending') as String,
         remarks: j['remarks'] as String?,
         processedByName: j['processed_by_name'] as String?,
@@ -423,6 +1006,15 @@ class ResidentEditRequest {
   /// The record's values (at fetch time) for the same keys — old → new.
   final Map<String, dynamic> current;
 
+  /// Why the RESIDENT asked for the change ("I got married, surname is now
+  /// Reyes"). Required on new requests by the API; null on rows filed before
+  /// the column existed, which is why it is still nullable here.
+  /// Distinct from [remarks], which is the reviewing STAFF member's note.
+  final String? reason;
+
+  /// The resident's purok, for the staff review list.
+  final String? purok;
+
   String status; // pending | approved | rejected
   String? remarks;
   final String? processedByName;
@@ -440,6 +1032,11 @@ class EditRequestStore extends ChangeNotifier with ApiStore {
   int get pendingCount =>
       _requests.where((r) => r.status == 'pending').length;
 
+  /// Shortest reason the API will accept. Kept in step with REASON_MIN in the
+  /// server's routes/edit-requests.js so the app can say so before the round
+  /// trip rather than surfacing a 400.
+  static const reasonMinLength = 10;
+
   @override
   Future<void> fetch() async {
     final rows = await ApiClient.instance.get('/api/edit-requests') as List;
@@ -449,16 +1046,31 @@ class EditRequestStore extends ChangeNotifier with ApiStore {
           (r) => ResidentEditRequest.fromJson(r as Map<String, dynamic>)));
   }
 
+  /// One resident's own requests, newest first — for My Activity.
+  Future<List<ResidentEditRequest>> forResident(int residentId) async {
+    final rows = await ApiClient.instance
+        .get('/api/edit-requests?resident_id=$residentId') as List;
+    return rows
+        .map((r) => ResidentEditRequest.fromJson(r as Map<String, dynamic>))
+        .toList();
+  }
+
   /// Resident-side: file a request. [changes] holds only the fields being
   /// changed, keyed by resident column name.
+  ///
+  /// [reason] is required — the API rejects a request without one (400). A
+  /// barangay record is a legal document, and staff approving a surname change
+  /// need to know it followed a marriage rather than a typo.
   Future<void> submit({
     required int residentId,
     required Map<String, dynamic> changes,
+    required String reason,
     int? accountId,
   }) async {
     await ApiClient.instance.post('/api/edit-requests', {
       'resident_id': residentId,
       'changes': changes,
+      'reason': reason,
       if (accountId != null) 'account_id': accountId,
     });
     // Staff lists refresh on next load; no local insert needed since the
@@ -1338,6 +1950,23 @@ class DashboardStats extends ChangeNotifier with ApiStore {
   double? feedbackAvg;
   int accountsClaimed = 0;
 
+  /// Active residents who have no online account yet.
+  int residentsUnclaimed = 0;
+
+  /// Account applications waiting for a reviewer — Account Claiming's queue,
+  /// and what its drawer badge counts.
+  int applicationsPending = 0;
+
+  /// module key → the count on its MIS drawer badge. Only modules with
+  /// something genuinely outstanding appear; a badge that is always showing a
+  /// number stops meaning "there is something waiting for you".
+  Map<String, int> get navBadges => {
+        if (certificatesPending > 0) 'certificates': certificatesPending,
+        if (incidentsOpen > 0) 'incidents': incidentsOpen,
+        if (applicationsPending > 0) 'accounts': applicationsPending,
+        if (feedbackNew > 0) 'feedback': feedbackNew,
+      };
+
   /// purok name → active residents.
   Map<String, int> byPurok = {};
 
@@ -1359,6 +1988,8 @@ class DashboardStats extends ChangeNotifier with ApiStore {
     feedbackNew = (j['feedback_new'] as num?)?.toInt() ?? 0;
     feedbackAvg = (j['feedback_avg'] as num?)?.toDouble();
     accountsClaimed = (j['accounts_claimed'] as num?)?.toInt() ?? 0;
+    residentsUnclaimed = (j['residents_unclaimed'] as num?)?.toInt() ?? 0;
+    applicationsPending = (j['applications_pending'] as num?)?.toInt() ?? 0;
     byPurok = {
       for (final r in (j['by_purok'] as List? ?? const []))
         (r['purok'] ?? '?') as String: (r['residents'] as num?)?.toInt() ?? 0,
@@ -1486,27 +2117,57 @@ class AnnouncementStore extends ChangeNotifier with ApiStore {
   final List<Announcement> _items = [];
   List<Announcement> get all => List.unmodifiable(_items);
 
+  /// When true, the next fetch asks for posts past their take-down date too.
+  /// Only the MIS Site Content editor sets this: the resident-facing bulletin
+  /// must never show an expired notice, but staff have to be able to see and
+  /// re-date one that has come down, or it would look as though it vanished.
+  bool includeExpired = false;
+
   @override
   Future<void> fetch() async {
-    final rows = await ApiClient.instance.get('/api/announcements') as List;
+    final rows = await ApiClient.instance.get(
+      includeExpired
+          ? '/api/announcements?include_expired=1'
+          : '/api/announcements',
+    ) as List;
     _items
       ..clear()
       ..addAll(
           rows.map((r) => Announcement.fromJson(r as Map<String, dynamic>)));
   }
 
+  /// Switches the expired-posts filter and reloads if it actually changed.
+  Future<void> setIncludeExpired(bool value) async {
+    if (includeExpired == value) return;
+    includeExpired = value;
+    await refresh();
+  }
+
   /// Create ([id] == null) or update an announcement.
+  ///
+  /// [expiresAt] is a `YYYY-MM-DD` take-down date, or null for "no expiry".
+  /// It is always sent, including as null: clearing the date is how staff put
+  /// an expired post back up, so an omitted value cannot mean "leave it".
+  ///
+  /// [expiresTime] is an optional 24-hour `HH:MM`; null means the post comes
+  /// down at the END of [expiresAt]. Sent the same way and for the same reason
+  /// — dropping a time has to be able to put the post back to end-of-day.
   Future<void> save({
     int? id,
     required String title,
     required String body,
     required String tag,
+    String? expiresAt,
+    String? expiresTime,
     int? accountId,
   }) async {
     final payload = {
       'title': title,
       'body': body,
       'tag': tag,
+      'expires_at': (expiresAt == null || expiresAt.isEmpty) ? null : expiresAt,
+      'expires_time':
+          (expiresTime == null || expiresTime.isEmpty) ? null : expiresTime,
       if (accountId != null) 'account_id': accountId,
     };
     final res = id == null
@@ -1782,6 +2443,87 @@ class DeletePermissions extends ChangeNotifier with ApiStore {
       {for (final e in _matrix.entries) e.key: Map<String, bool>.from(e.value)};
 }
 
+/// Role Access Matrix rows the SERVER enforces too — unlike module access,
+/// which only hides screens. conde-labak-server/permissions.js reads the same
+/// settings keys. Admin always has every one; the Resident column is locked
+/// off (each creates accounts, spends text credits or shows other residents'
+/// personal data); other roles take a stored value, else [defaults] for the
+/// Officer and off for custom roles.
+///
+///   [actions] — 'action-permissions': approve account applications
+class ActionPermissions extends ChangeNotifier with ApiStore {
+  ActionPermissions._(this._settingKey, this.defaults);
+
+  static final ActionPermissions actions = ActionPermissions._(
+    'action-permissions',
+    const {'approve_applications': true},
+  );
+
+  final String _settingKey;
+
+  /// Officer defaults for each row this store holds.
+  final Map<String, bool> defaults;
+
+  Map<String, Map<String, bool>> _matrix = {};
+
+  @override
+  Future<void> fetch() async {
+    final j = await ApiClient.instance.get('/api/settings/$_settingKey')
+        as Map<String, dynamic>;
+    final value = j['value'];
+    _matrix = {};
+    if (value is Map) {
+      value.forEach((role, perms) {
+        if (perms is Map) {
+          _matrix[role.toString()] = {
+            for (final e in perms.entries) e.key.toString(): e.value == true,
+          };
+        }
+      });
+    }
+  }
+
+  /// Whether [roleKey] (a lower-cased role name) holds [key].
+  bool roleCan(String roleKey, String key) {
+    if (roleKey == 'admin') return true;
+    if (roleKey == 'resident') return false;
+    return _matrix[roleKey]?[key] ??
+        (roleKey == 'officer' ? (defaults[key] ?? false) : false);
+  }
+
+  Future<void> setRolePerm(String roleKey, String key, bool allowed) async {
+    final prev = _clone();
+    (_matrix[roleKey] ??= {})[key] = allowed;
+    notifyListeners();
+    try {
+      await ApiClient.instance
+          .put('/api/settings/$_settingKey', {'value': _matrix});
+    } catch (_) {
+      _matrix = prev;
+      notifyListeners();
+      rethrow;
+    }
+  }
+
+  Future<void> removeRole(String roleKey) async {
+    if (!_matrix.containsKey(roleKey)) return;
+    final prev = _clone();
+    _matrix.remove(roleKey);
+    notifyListeners();
+    try {
+      await ApiClient.instance
+          .put('/api/settings/$_settingKey', {'value': _matrix});
+    } catch (_) {
+      _matrix = prev;
+      notifyListeners();
+      rethrow;
+    }
+  }
+
+  Map<String, Map<String, bool>> _clone() =>
+      {for (final e in _matrix.entries) e.key: Map<String, bool>.from(e.value)};
+}
+
 /// One entry in the system recycle bin (GET /api/archive). A record that was
 /// deleted from the system and can be restored — residents, certificate
 /// requests, blotter reports, feedback, announcements, officials.
@@ -1924,6 +2666,8 @@ class AccountRow {
     required this.residentId,
     required this.purok,
     required this.createdAt,
+    this.status = 'active',
+    this.suspendedReason,
   });
 
   final int accountId;
@@ -1934,6 +2678,17 @@ class AccountRow {
   final String? purok;
   final String createdAt;
 
+  /// 'active' | 'suspended'. Archived accounts are not in this list at all.
+  String status;
+
+  /// Why a suspended account is suspended: 'manual' (an Admin did it here) or
+  /// 'deceased' (the linked resident record is flagged deceased, so only that
+  /// record can lift it). Null while active.
+  String? suspendedReason;
+
+  bool get isSuspended => status == 'suspended';
+  bool get suspendedByDeath => isSuspended && suspendedReason == 'deceased';
+
   factory AccountRow.fromJson(Map<String, dynamic> j) => AccountRow(
         accountId: j['account_id'] as int,
         name: (j['name'] ?? j['email'] ?? '') as String,
@@ -1942,6 +2697,10 @@ class AccountRow {
         residentId: j['resident_id'] as int?,
         purok: j['purok'] as String?,
         createdAt: (j['created_at'] ?? '') as String,
+        // Older server builds send no status column; those lists only ever
+        // held active accounts, so that is the safe reading.
+        status: (j['status'] ?? 'active') as String,
+        suspendedReason: j['suspended_reason'] as String?,
       );
 }
 
@@ -1979,6 +2738,29 @@ class AccountStore extends ChangeNotifier with ApiStore {
       if (actorRole != null) 'actor_role': actorRole,
     });
     a.role = newRole;
+    notifyListeners();
+  }
+
+  /// Suspend or reactivate one account. A suspended account keeps its role and
+  /// everything it processed and simply cannot sign in — the reversible half of
+  /// removing someone's access. The server refuses to suspend the acting
+  /// account or the last Admin who can still sign in.
+  Future<void> setSuspended(
+    AccountRow a,
+    bool suspended, {
+    int? actorAccountId,
+    String? actorName,
+    String? actorRole,
+  }) async {
+    final next = suspended ? 'suspended' : 'active';
+    await ApiClient.instance.patch('/api/accounts/${a.accountId}/status', {
+      'status': next,
+      if (actorAccountId != null) 'account_id': actorAccountId,
+      if (actorName != null) 'actor_name': actorName,
+      if (actorRole != null) 'actor_role': actorRole,
+    });
+    a.status = next;
+    a.suspendedReason = suspended ? 'manual' : null;
     notifyListeners();
   }
 }
@@ -2025,6 +2807,25 @@ class ModuleAccess extends ChangeNotifier with ApiStore {
   /// the role's built-in default when there's no stored override.
   bool can(String roleKey, String moduleKey, {required bool fallback}) =>
       _byRole[roleKey]?[moduleKey] ?? fallback;
+
+  /// The matrix row that gates the MIS itself rather than a module inside it:
+  /// with it off, the role never gets the MIS destination in the navbar and
+  /// cannot open the shell. Stored beside the module rows so web and app read
+  /// one setting. Admin is never lockable out — an Admin who revoked their own
+  /// MIS access would have no way back in to undo it.
+  static const String misKey = 'mis';
+  static const Map<String, bool> misDefaults = {
+    'admin': true,
+    'officer': true,
+    'resident': false,
+  };
+
+  bool canOpenMis(String? roleName) {
+    if (roleName == null) return false;
+    final rk = roleName.toLowerCase();
+    if (rk == 'admin') return true;
+    return _byRole[rk]?[misKey] ?? (misDefaults[rk] ?? false);
+  }
 
   Map<String, Map<String, bool>> _clone() =>
       {for (final e in _byRole.entries) e.key: Map<String, bool>.from(e.value)};

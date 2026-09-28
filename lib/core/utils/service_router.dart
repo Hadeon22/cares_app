@@ -8,14 +8,12 @@ import '../../screens/login_screen.dart';
 import '../../screens/services/certificate_request_screen.dart';
 import '../../screens/services/feedback_screen.dart';
 import '../../screens/services/incident_report_screen.dart';
-import '../../screens/services/residency_search_screen.dart';
 import '../constants/app_colors.dart';
 
 /// Services that file something under your name — these require an account,
 /// so requests can be tracked, auto-filled and notified. The GIS map stays
 /// public and Account Claiming must work signed-out by definition.
 const _requiresSignIn = {
-  ServiceAction.residency,
   ServiceAction.certificates,
   ServiceAction.incidents,
   ServiceAction.feedback,
@@ -30,8 +28,6 @@ void openService(BuildContext context, ServiceAction action) {
   }
   final Widget screen;
   switch (action) {
-    case ServiceAction.residency:
-      screen = const ResidencySearchScreen();
     case ServiceAction.certificates:
       screen = const CertificateRequestScreen();
     case ServiceAction.incidents:

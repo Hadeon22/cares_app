@@ -3,10 +3,15 @@ import 'package:flutter/material.dart';
 import '../core/constants/app_colors.dart';
 import '../core/constants/app_constants.dart';
 
-/// Renders a long list one page at a time (default 10 rows) with a compact
-/// prev/next footer — the shared paging used by every MIS list. Give it the
-/// full [items] and an [itemBuilder]; it slices the current page and shows
-/// the arrow controls only when there's more than one page.
+/// Rows per page across every MIS list, app and web (PAGE_SIZE in the web's
+/// js/shell.js). One constant so the two stay in step — a resident who checks
+/// a list on the phone and then on the desktop should see the same pages.
+const int kPageSize = 15;
+
+/// Renders a long list one page at a time with a compact prev/next footer —
+/// the shared paging used by every MIS list. Give it the full [items] and an
+/// [itemBuilder]; it slices the current page and shows the arrow controls only
+/// when there's more than one page.
 ///
 /// The page index is clamped whenever [items] shrinks (e.g. after a search
 /// filter or a delete), so the view never lands on an empty page.
@@ -15,7 +20,7 @@ class PaginatedColumn<T> extends StatefulWidget {
     super.key,
     required this.items,
     required this.itemBuilder,
-    this.pageSize = 10,
+    this.pageSize = kPageSize,
     this.itemLabel = 'item',
   });
 

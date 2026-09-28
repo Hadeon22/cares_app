@@ -193,10 +193,12 @@ class ResidentPhotoPicker extends StatelessWidget {
               Text('Profile Photo',
                   style: text.labelLarge?.copyWith(
                       color: AppColors.ink, fontWeight: FontWeight.w700)),
+              // The rule staff will reject against, stated before the picker
+              // opens rather than after the photo is declined. Same wording as
+              // the web's Settings → Edit my details.
               Text(
-                photo == null
-                    ? 'Optional — tap to add a photo'
-                    : 'Tap to change or remove',
+                'Only proper pictures are allowed — a clear, recent photo of '
+                'your face against a plain background.',
                 style: text.labelSmall?.copyWith(color: AppColors.inkMuted),
               ),
             ],

@@ -466,35 +466,50 @@ class _MisDrawer extends StatelessWidget {
             ),
             const Divider(color: AppColors.navyBorder),
             Expanded(
-              child: ListView(
-                padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
-                children: [
-                  for (final m in visible)
-                    ListTile(
-                      dense: true,
-                      selected: m.key == current,
-                      selectedTileColor: AppColors.gold.withValues(alpha: 0.12),
-                      leading: Icon(
-                        m.icon,
-                        size: 20,
-                        color: m.key == current
-                            ? AppColors.gold
-                            : AppColors.onNavyMuted,
-                      ),
-                      title: Text(
-                        m.title,
-                        style: text.labelLarge?.copyWith(
-                          color: m.key == current
-                              ? AppColors.gold
-                              : AppColors.onNavy,
-                          fontWeight: m.key == current
-                              ? FontWeight.w800
-                              : FontWeight.w600,
+              // Count badges on the modules with something outstanding —
+              // pending certificates, open incidents, unclaimed residents,
+              // unreviewed feedback. Same four the web sidebar carries, from
+              // the same GET /api/stats/dashboard.
+              child: AnimatedBuilder(
+                animation: DashboardStats.instance..ensureLoaded(),
+                builder: (context, _) {
+                  final badges = DashboardStats.instance.navBadges;
+                  return ListView(
+                    padding:
+                        const EdgeInsets.symmetric(vertical: AppSpacing.sm),
+                    children: [
+                      for (final m in visible)
+                        ListTile(
+                          dense: true,
+                          selected: m.key == current,
+                          selectedTileColor:
+                              AppColors.gold.withValues(alpha: 0.12),
+                          leading: Icon(
+                            m.icon,
+                            size: 20,
+                            color: m.key == current
+                                ? AppColors.gold
+                                : AppColors.onNavyMuted,
+                          ),
+                          title: Text(
+                            m.title,
+                            style: text.labelLarge?.copyWith(
+                              color: m.key == current
+                                  ? AppColors.gold
+                                  : AppColors.onNavy,
+                              fontWeight: m.key == current
+                                  ? FontWeight.w800
+                                  : FontWeight.w600,
+                            ),
+                          ),
+                          trailing: badges[m.key] == null
+                              ? null
+                              : _NavBadge(count: badges[m.key]!),
+                          onTap: () => onSelect(m.key),
                         ),
-                      ),
-                      onTap: () => onSelect(m.key),
-                    ),
-                ],
+                    ],
+                  );
+                },
               ),
             ),
             const Divider(color: AppColors.navyBorder),
@@ -520,6 +535,37 @@ class _MisDrawer extends StatelessWidget {
               onTap: () => AppSession.instance.signOut(),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// The red count pill on a drawer module — pending certificates, open
+/// incidents, unclaimed residents, unreviewed feedback. Rendered only when the
+/// count is above zero (see DashboardStats.navBadges), so its presence alone
+/// means there is something waiting.
+class _NavBadge extends StatelessWidget {
+  const _NavBadge({required this.count});
+
+  final int count;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      constraints: const BoxConstraints(minWidth: 22),
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: AppColors.flagRed.withValues(alpha: 0.22),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        count > 99 ? '99+' : '$count',
+        textAlign: TextAlign.center,
+        style: const TextStyle(
+          color: Color(0xFFFCA5A5),
+          fontSize: 11,
+          fontWeight: FontWeight.w800,
         ),
       ),
     );

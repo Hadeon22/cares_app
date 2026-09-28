@@ -22,7 +22,10 @@ class UsersPage extends StatefulWidget {
 
 class _UsersPageState extends State<UsersPage> {
   // Module keys match the MIS shell so a toggle actually gates the module.
+  // 'mis' leads: it is the door the rest of the rows are inside — switch it off
+  // and the role loses the MIS destination in the navbar entirely.
   static const _modules = <(String, String)>[
+    ('mis', 'MIS Access'),
     ('dashboard', 'Dashboard'),
     ('residency', 'Barangay Residency'),
     ('certificates', 'Certificate Processing'),
@@ -35,22 +38,27 @@ class _UsersPageState extends State<UsersPage> {
     ('users', 'User Management'),
     ('audit', 'Audit Logs'),
     ('archive', 'Archive'),
+    // The web MIS's SMS Log. It holds residents' phone numbers, so the server
+    // enforces this row too and it is locked off for residents.
+    ('sms', 'SMS Log'),
   ];
 
   // Built-in module-access defaults per built-in role (custom roles start off),
   // mirroring the web matrix.
   static const _defaultModuleAccess = <String, Map<String, bool>>{
     'officer': {
+      'mis': true,
       'dashboard': true, 'residency': true, 'certificates': true,
       'incidents': true, 'feedback': true, 'gis': true, 'accounts': true,
       'analytics': true, 'content': true, 'users': false, 'audit': false,
-      'archive': false,
+      'archive': false, 'sms': true,
     },
     'resident': {
+      'mis': false,
       'dashboard': false, 'residency': true, 'certificates': true,
       'incidents': true, 'feedback': true, 'gis': true, 'accounts': true,
       'analytics': false, 'content': false, 'users': false, 'audit': false,
-      'archive': false,
+      'archive': false, 'sms': false,
     },
   };
 
@@ -66,6 +74,7 @@ class _UsersPageState extends State<UsersPage> {
     super.initState();
     AccountStore.instance.ensureLoaded();
     DeletePermissions.instance.ensureLoaded();
+    ActionPermissions.actions.ensureLoaded();
     ModuleAccess.instance.ensureLoaded();
     MatrixRoles.instance.ensureLoaded();
   }
@@ -90,7 +99,6 @@ class _UsersPageState extends State<UsersPage> {
       ),
     );
     if (confirmed != true) return;
-    final oldRole = a.role;
     try {
       await AccountStore.instance.changeRole(
         a,
@@ -106,13 +114,63 @@ class _UsersPageState extends State<UsersPage> {
       }
       return;
     }
-    AuditLog.instance.log(
-      'ROLE_CHANGE',
-      'Role of ${a.email} changed: $oldRole → $newRole',
-      level: AuditLevel.warning,
-      category: AuditCategory.auth,
-    );
+    // No AuditLog.log() here — PATCH /api/accounts/:id/role writes the
+    // ROLE_CHANGE entry server-side, from the actor fields sent above.
     if (mounted) showAppToast(context, '${a.name} is now $newRole');
+  }
+
+  // ── Suspend / reactivate ────────────────────────────────────────
+  // Suspension is the reversible half of taking someone's access away: the
+  // account keeps its role, its linked resident and everything it ever
+  // processed, and simply cannot sign in until an Admin lifts it. Deleting
+  // (archiving) is the other half.
+  Future<void> _setSuspended(AccountRow a, bool suspend) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(suspend ? 'Suspend this account?' : 'Reactivate account?'),
+        content: Text(suspend
+            ? '${a.name} (${a.email}) will be refused at the next sign-in, on '
+                'both the app and the web. Nothing is deleted — the account '
+                'keeps its role and stays in this list.'
+            : '${a.name} (${a.email}) can sign in again immediately, with the '
+                'same role and permissions as before.'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancel')),
+          FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: Text(suspend ? 'Suspend' : 'Reactivate')),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    try {
+      await AccountStore.instance.setSuspended(
+        a,
+        suspend,
+        actorAccountId: AppSession.instance.accountId,
+        actorName: AppSession.instance.displayName,
+        actorRole: AppSession.instance.role?.label,
+      );
+    } catch (e) {
+      if (mounted) {
+        showAppToast(context, 'Could not change the account status: $e',
+            icon: Icons.error_outline);
+      }
+      return;
+    }
+    // No AuditLog.log() here: PATCH /api/accounts/:id/status writes the
+    // ACCOUNT_SUSPEND / ACCOUNT_REACTIVATE entry itself, under the actor this
+    // call sent it. Logging from both ends put the line in the trail twice.
+    if (mounted) {
+      showAppToast(
+          context,
+          suspend
+              ? '${a.name} can no longer sign in'
+              : '${a.name} can sign in again');
+    }
   }
 
   // ── Matrix toggles (tap a ✓/✗ to flip a role's access) ──────────
@@ -122,6 +180,24 @@ class _UsersPageState extends State<UsersPage> {
       AuditLog.instance.log(
         'MODULE_ACCESS_UPDATE',
         '$roleKey access to "$moduleKey" → ${!current ? 'granted' : 'revoked'}',
+        level: AuditLevel.warning,
+        category: AuditCategory.settings,
+      );
+    } catch (e) {
+      if (mounted) {
+        showAppToast(context, 'Could not save: $e', icon: Icons.error_outline);
+      }
+    }
+  }
+
+  Future<void> _toggleAction(
+      ActionPermissions store, String roleKey, String key, bool current) async {
+    try {
+      await store.setRolePerm(roleKey, key, !current);
+      AuditLog.instance.log(
+        'ACTION_PERM_UPDATE',
+        '$roleKey permission to "$key" → '
+            '${!current ? 'granted' : 'revoked'}',
         level: AuditLevel.warning,
         category: AuditCategory.settings,
       );
@@ -211,6 +287,7 @@ class _UsersPageState extends State<UsersPage> {
       await MatrixRoles.instance.remove(role);
       await ModuleAccess.instance.removeRole(rk);
       await DeletePermissions.instance.removeRole(rk);
+      await ActionPermissions.actions.removeRole(rk);
       AuditLog.instance.log(
         'ROLE_REMOVE',
         'Role "$role" removed from the access matrix',
@@ -335,10 +412,38 @@ class _UsersPageState extends State<UsersPage> {
                     style:
                         text.labelSmall?.copyWith(color: AppColors.inkMuted),
                   ),
+                if (a.isSuspended)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 4),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const StatusBadge('Suspended', kind: BadgeKind.danger),
+                        const SizedBox(width: 6),
+                        if (a.suspendedByDeath)
+                          Text('Resident deceased',
+                              style: text.labelSmall
+                                  ?.copyWith(color: AppColors.inkMuted)),
+                      ],
+                    ),
+                  ),
               ],
             ),
           ),
           const SizedBox(width: AppSpacing.sm),
+          // Suspending your own account, or the last Admin, is refused by the
+          // server; an account suspended by a death record is lifted from the
+          // resident record, not here.
+          if (_isAdmin && !isSelf && !a.suspendedByDeath)
+            IconButton(
+              visualDensity: VisualDensity.compact,
+              tooltip: a.isSuspended ? 'Reactivate account' : 'Suspend account',
+              icon: Icon(a.isSuspended ? Icons.lock_open : Icons.lock_outline,
+                  size: 18,
+                  color:
+                      a.isSuspended ? AppColors.inkMuted : AppColors.flagRed),
+              onPressed: () => _setSuspended(a, !a.isSuspended),
+            ),
           if (canChange)
             DropdownButton<String>(
               value: roleOptions.contains(a.role) ? a.role : null,
@@ -373,6 +478,12 @@ class _UsersPageState extends State<UsersPage> {
   }
 
   // ── Role Access Matrix (dynamic roles, tap ✓/✗ to switch) ───────
+  // Action rows (settings key 'action-permissions') — same keys as the web's
+  // ACTION_ROWS in js/pages/users.js.
+  static const _actionRows = [
+    ('approve_applications', 'Approve account applications'),
+  ];
+
   static const double _labelW = 168;
   static const double _colW = 78;
 
@@ -380,6 +491,7 @@ class _UsersPageState extends State<UsersPage> {
     return AnimatedBuilder(
       animation: Listenable.merge([
         DeletePermissions.instance,
+        ActionPermissions.actions,
         ModuleAccess.instance,
         MatrixRoles.instance,
       ]),
@@ -414,10 +526,14 @@ class _UsersPageState extends State<UsersPage> {
                     for (final (key, label) in _modules)
                       _matrixRow(context, roles, label, (role) {
                         final rk = _roleKey(role);
-                        final on = ModuleAccess.instance
-                            .can(rk, key, fallback: _moduleDefault(rk, key));
+                        final locked = rk == 'resident' && key == 'sms';
+                        final on = !locked &&
+                            ModuleAccess.instance
+                                .can(rk, key, fallback: _moduleDefault(rk, key));
                         return (on,
-                            _isAdmin ? () => _toggleModule(rk, key, on) : null);
+                            _isAdmin && !locked
+                                ? () => _toggleModule(rk, key, on)
+                                : null);
                       }),
                     // Delete is a single blanket permission per role (one row).
                     _matrixRow(context, roles, 'Delete Records', (role) {
@@ -430,6 +546,17 @@ class _UsersPageState extends State<UsersPage> {
                                   rk, DeletePermissions.recordsKey, on)
                               : null);
                     }),
+                    // Enforced by the server too; the Resident cell is locked.
+                    for (final (key, label) in _actionRows)
+                      _matrixRow(context, roles, label, (role) {
+                        final rk = _roleKey(role);
+                        final store = ActionPermissions.actions;
+                        final on = store.roleCan(rk, key);
+                        return (on,
+                            _isAdmin && rk != 'resident'
+                                ? () => _toggleAction(store, rk, key, on)
+                                : null);
+                      }),
                   ],
                 ),
               ),

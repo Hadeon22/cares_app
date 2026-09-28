@@ -25,7 +25,7 @@ class ServicesScreen extends StatelessWidget {
             child: SectionHeader(
               eyebrow: L.text.citizenServices,
               title: L.text.servicesHeading,
-              subtitle: '${L.text.servicesSub} ${L.text.noAccountNeeded}',
+              subtitle: '${L.text.servicesSub} ${L.text.accountRequired}',
             ),
           ),
         ),

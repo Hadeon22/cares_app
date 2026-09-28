@@ -152,9 +152,9 @@ class _IncidentReportScreenState extends State<IncidentReportScreen> {
               TextSpan(
                   text: '911',
                   style: TextStyle(fontWeight: FontWeight.w800)),
-              TextSpan(text: ' or the local police at '),
+              TextSpan(text: ' or the barangay hotline at '),
               TextSpan(
-                  text: '(043) 702-4011',
+                  text: '043-702-8875',
                   style: TextStyle(fontWeight: FontWeight.w800)),
               TextSpan(text: ' immediately.'),
             ])),

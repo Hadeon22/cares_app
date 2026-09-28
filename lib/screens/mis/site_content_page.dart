@@ -111,7 +111,12 @@ class _AnnouncementsTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Staff need to see posts that have already come down, so they can
+    // re-date or remove them — otherwise a post would appear to have vanished
+    // the day it expired. setIncludeExpired reloads only if it changed, so
+    // this is safe to call on every build.
     final store = AnnouncementStore.instance..ensureLoaded();
+    store.setIncludeExpired(true);
     DeletePermissions.instance.ensureLoaded();
     final text = Theme.of(context).textTheme;
     final loc = MaterialLocalizations.of(context);
@@ -164,7 +169,12 @@ class _AnnouncementsTab extends StatelessWidget {
                                     margin: const EdgeInsets.only(
                                         bottom: AppSpacing.sm),
                                     decoration: BoxDecoration(
-                                      color: AppColors.cream,
+                                      // An expired post stays in this list but
+                                      // reads as off-air.
+                                      color: a.expired
+                                          ? AppColors.inkMuted
+                                              .withValues(alpha: 0.08)
+                                          : AppColors.cream,
                                       borderRadius:
                                           BorderRadius.circular(AppRadii.sm),
                                     ),
@@ -194,6 +204,11 @@ class _AnnouncementsTab extends StatelessWidget {
                                                       _TagChip(
                                                           tag: a.tag,
                                                           color: a.tagColor),
+                                                      if (a.expired)
+                                                        _TagChip(
+                                                            tag: 'Expired',
+                                                            color: AppColors
+                                                                .inkMuted),
                                                       Text(
                                                         loc.formatShortDate(
                                                             a.createdAt),
@@ -300,13 +315,72 @@ class _AnnouncementFormScreenState extends State<_AnnouncementFormScreen> {
   late final _title = TextEditingController(text: widget.existing?.title);
   late final _body = TextEditingController(text: widget.existing?.body);
   late String _tag = widget.existing?.tag ?? 'Advisory';
+
+  /// Optional take-down date. Most bulletins are about a dated event, and a
+  /// notice for something that has already happened is worse than no notice.
+  late DateTime? _expires = _parseExpiry(widget.existing?.expiresAt);
+
+  /// Optional time of day for the take-down. null = the end of [_expires],
+  /// which is what most notices mean; a time is for the ones that stop being
+  /// true partway through a day (a brown-out until 5 PM, a noon deadline).
+  late TimeOfDay? _expiresTime = _parseTime(widget.existing?.expiresTime);
   bool _busy = false;
+
+  static DateTime? _parseExpiry(String? raw) =>
+      (raw == null || raw.isEmpty) ? null : DateTime.tryParse(raw);
+
+  static TimeOfDay? _parseTime(String? raw) {
+    final m = RegExp(r'^(\d{2}):(\d{2})$').firstMatch(raw ?? '');
+    return m == null
+        ? null
+        : TimeOfDay(hour: int.parse(m.group(1)!), minute: int.parse(m.group(2)!));
+  }
+
+  /// The `YYYY-MM-DD` the API stores.
+  static String _fmt(DateTime d) {
+    String p(int n) => '$n'.padLeft(2, '0');
+    return '${d.year}-${p(d.month)}-${p(d.day)}';
+  }
+
+  /// The 24-hour `HH:MM` the API stores.
+  static String _fmtTime(TimeOfDay t) {
+    String p(int n) => '$n'.padLeft(2, '0');
+    return '${p(t.hour)}:${p(t.minute)}';
+  }
 
   @override
   void dispose() {
     _title.dispose();
     _body.dispose();
     super.dispose();
+  }
+
+  Future<void> _pickExpiry() async {
+    final now = DateTime.now();
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _expires ?? now.add(const Duration(days: 7)),
+      // A take-down date in the past would retire the post the moment it is
+      // published.
+      firstDate: DateTime(now.year, now.month, now.day),
+      lastDate: DateTime(now.year + 3),
+      helpText: 'Take down after',
+    );
+    if (picked != null) setState(() => _expires = picked);
+  }
+
+  Future<void> _pickExpiryTime() async {
+    final picked = await showTimePicker(
+      context: context,
+      initialTime: _expiresTime ?? const TimeOfDay(hour: 17, minute: 0),
+      helpText: 'Comes down at',
+    );
+    // Midnight is what "end of the previous day" already means, and the API
+    // reads a stored 00:00 as a date-only take-down — so it is not a time the
+    // picker can usefully return here.
+    if (picked != null && !(picked.hour == 0 && picked.minute == 0)) {
+      setState(() => _expiresTime = picked);
+    }
   }
 
   Future<void> _save() async {
@@ -324,6 +398,11 @@ class _AnnouncementFormScreenState extends State<_AnnouncementFormScreen> {
         title: title,
         body: _body.text.trim(),
         tag: _tag,
+        expiresAt: _expires == null ? null : _fmt(_expires!),
+        // A time with no date has nothing to be a time of.
+        expiresTime: (_expires == null || _expiresTime == null)
+            ? null
+            : _fmtTime(_expiresTime!),
         accountId: AppSession.instance.accountId,
       );
     } catch (e) {
@@ -381,6 +460,63 @@ class _AnnouncementFormScreenState extends State<_AnnouncementFormScreen> {
             hint: 'What residents need to know — schedule, venue, '
                 'requirements…',
           ),
+          // Setting a date takes the post off the bulletin at the end of that
+          // day without deleting it — it stays in this list, marked expired,
+          // and clearing the date puts it straight back up.
+          AppTextField(
+            label: 'Take down after',
+            readOnly: true,
+            hint: _expires == null
+                ? 'Optional — tap to set a date'
+                : MaterialLocalizations.of(context).formatMediumDate(_expires!),
+            onTap: _pickExpiry,
+          ),
+          // The time only appears once there is a date to hang it on, and
+          // leaving it blank means the end of that day.
+          if (_expires != null)
+            AppTextField(
+              label: 'Comes down at',
+              readOnly: true,
+              hint: _expiresTime == null
+                  ? 'Optional — end of the day'
+                  : MaterialLocalizations.of(context)
+                      .formatTimeOfDay(_expiresTime!),
+              onTap: _pickExpiryTime,
+            ),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  _expires == null
+                      ? 'Stays up until removed.'
+                      : Announcement(
+                          title: '',
+                          body: '',
+                          tag: _tag,
+                          createdAt: DateTime.now(),
+                          expiresAt: _fmt(_expires!),
+                          expiresTime: _expiresTime == null
+                              ? null
+                              : _fmtTime(_expiresTime!),
+                        ).expiryNote,
+                  style: Theme.of(context)
+                      .textTheme
+                      .bodySmall
+                      ?.copyWith(color: AppColors.inkMuted),
+                ),
+              ),
+              if (_expires != null)
+                TextButton(
+                  // Clearing the date takes the time with it.
+                  onPressed: () => setState(() {
+                    _expires = null;
+                    _expiresTime = null;
+                  }),
+                  child: const Text('Clear'),
+                ),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.sm),
           FilledButton.icon(
             onPressed: _busy ? null : _save,
             icon: _busy

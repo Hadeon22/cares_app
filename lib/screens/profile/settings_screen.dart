@@ -7,6 +7,7 @@ import '../../core/utils/fade_slide.dart';
 import '../../data/session.dart';
 import '../../data/theme_controller.dart';
 import '../../widgets/app_toast.dart';
+import '../../widgets/sms_settings_sheet.dart';
 import 'change_password_screen.dart';
 
 /// Settings — app-level preferences that belong to the device/account
@@ -96,6 +97,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
               child: _Group(
                 title: L.text.notificationsGroup,
                 children: [
+                  // Text messages are the barangay's, not the device's: the
+                  // choice is saved on the resident record (SMS settings).
+                  _NavRow(
+                    icon: Icons.sms_outlined,
+                    title: L.text.smsRow,
+                    subtitle: L.text.smsRowSub,
+                    enabled: AppSession.instance.residentId != null,
+                    onTap: () => showSmsSettingsSheet(context),
+                  ),
                   _SwitchRow(
                     icon: Icons.campaign_outlined,
                     title: L.text.notifAdvisories,

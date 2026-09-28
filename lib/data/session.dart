@@ -5,7 +5,6 @@ import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'api_client.dart';
-import 'push_service.dart';
 import 'resident_profile.dart';
 import 'stores.dart';
 
@@ -116,7 +115,9 @@ class AppSession extends ChangeNotifier {
 
   static const _prefsKey = 'cares.session';
 
-  /// Real login against the shared PostgreSQL accounts table.
+  /// Signs in against the shared PostgreSQL accounts table — the same check
+  /// the web system uses, so a password changed on either side is the only
+  /// password that works on both.
   /// Throws [ApiException] with a user-showable message on failure.
   /// With [remember] the session is saved locally, so reopening the app
   /// signs the account back in without asking for the password again.
@@ -136,10 +137,6 @@ class AppSession extends ChangeNotifier {
     _residentId = res['resident_id'] as int?;
 
     if (remember) unawaited(_persist());
-
-    // Register this phone for push under the new account.
-    final acct = _accountId;
-    if (acct != null) unawaited(PushService.instance.registerForAccount(acct));
 
     // Warm the offline cache with the resident's own record so "My
     // Information" and the certificate auto-fill work without internet.
@@ -224,8 +221,6 @@ class AppSession extends ChangeNotifier {
       '${_displayName.isEmpty ? "User" : _displayName} signed out',
       category: AuditCategory.auth,
     );
-    // Stop pushes to this device for the account that's leaving.
-    unawaited(PushService.instance.unregister());
 
     // Forget the remembered session and this resident's cached record.
     final rid = _residentId;

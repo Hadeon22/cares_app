@@ -173,10 +173,15 @@ class _DashboardPageState extends State<DashboardPage> {
                   children: [
                     for (final e in recentAudit)
                       TimelineItem(
-                        color: e.level == AuditLevel.critical ||
-                                e.level == AuditLevel.warning
-                            ? const Color(0xFFEF4444)
-                            : const Color(0xFF22C55E),
+                        // Three levels, matching the web's Recent Activity:
+                        // critical red, warning gold, everything else green.
+                        // Collapsing warning into red made every role change
+                        // look like an incident.
+                        color: switch (e.level) {
+                          AuditLevel.critical => const Color(0xFFEF4444),
+                          AuditLevel.warning => const Color(0xFFF59E0B),
+                          _ => const Color(0xFF22C55E),
+                        },
                         title: e.details.isEmpty ? e.action : e.details,
                         meta: '${_timeAgo(e.ts)} · ${e.user}',
                       ),

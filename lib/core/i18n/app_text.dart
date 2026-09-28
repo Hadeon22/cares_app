@@ -57,9 +57,10 @@ class AppText {
   String get chooseService => _f
       ? 'Pumili ng serbisyo upang magsimula.'
       : 'Choose a service to get started.';
-  String get noAccountNeeded => _f
-      ? 'Hindi kailangan ng account sa karamihan ng serbisyo.'
-      : 'No account required for most services.';
+  // Most services now sit behind an account (replaces noAccountNeeded).
+  String get accountRequired => _f
+      ? 'Kailangan ng account sa karamihan ng serbisyo.'
+      : 'Accounts are required for most services.';
   String get seeAll => _f ? 'Lahat' : 'See all';
 
   // ── Quick info chips ─────────────────────────────────────────────────
@@ -92,14 +93,12 @@ class AppText {
   String get myInformationSub => _f
       ? 'Tingnan ang inyong account at talaan sa barangay'
       : 'View your account & barangay record';
-  String get myRequests => _f ? 'Aking mga Hiling' : 'My Requests';
-  String get myRequestsSub => _f
-      ? 'Subaybayan ang mga sertipiko at clearance'
-      : 'Track certificates & clearances';
-  String get activityHistory => _f ? 'Kasaysayan ng Aktibidad' : 'Activity History';
-  String get activityHistorySub => _f
-      ? 'Mga ulat na isinumite at punang ibinigay'
-      : 'Reports filed & feedback given';
+  // My Requests and Activity History merged into one entry — see
+  // MyActivityScreen. Matches the web's My Activity panel.
+  String get myActivity => _f ? 'Aking mga Aktibidad' : 'My Activity';
+  String get myActivitySub => _f
+      ? 'Mga hiling, ulat at punang isinumite ninyo'
+      : 'Requests, reports & feedback you sent';
   String get notifications => _f ? 'Mga Abiso' : 'Notifications';
   String get notificationsSub =>
       _f ? 'Mga advisory at update sa hiling' : 'Advisories & request updates';
@@ -202,6 +201,40 @@ class AppText {
   String get pwWeak => _f ? 'Mahina' : 'Weak';
   String get pwFair => _f ? 'Katamtaman' : 'Fair';
   String get pwStrong => _f ? 'Malakas' : 'Strong';
+
+  // ── Text messages (SMS) — same wording as the web's js/sms-settings.js ──
+  String get smsTitle =>
+      _f ? 'Mga text mula sa barangay' : 'Text messages from the barangay';
+  String get smsIntro => _f
+      ? 'Maaaring mag-text sa inyo ang barangay tungkol sa inyong mga hiling at mga anunsyo. Piliin kung alin ang nais ninyong matanggap.'
+      : 'The barangay can text you about your requests and its announcements. Choose what you want to receive.';
+  String get smsGoesTo => _f ? 'Ipinapadala ang text sa' : 'Texts go to';
+  String get smsNoNumber => _f
+      ? 'Walang mobile number sa inyong record sa barangay, kaya hindi pa kayo maaabot ng text.'
+      : 'There is no mobile number on your barangay record, so texts cannot reach you yet.';
+  String get smsWrongNumber =>
+      _f ? 'Maling numero? Humiling ng pagbabago' : 'Wrong number? Request a change';
+  String get smsAddNumber =>
+      _f ? 'Magdagdag ng mobile number' : 'Add a mobile number';
+  String get smsUpdates => _f ? 'Mga update sa sertipiko' : 'Certificate updates';
+  String get smsUpdatesSub => _f
+      ? 'Kapag handa nang kunin o hindi naaprubahan ang inyong hiling'
+      : 'When your request is ready for pickup, or not approved';
+  String get smsAdvisories =>
+      _f ? 'Mga anunsyo ng barangay' : 'Barangay announcements';
+  String get smsAdvisoriesSub =>
+      _f ? 'Mga abiso, kaganapan at paalala' : 'Advisories, events and reminders';
+  String get smsAlways => _f
+      ? 'Palaging ipinapadala ang mga emergency na anunsyo at mga security code.'
+      : 'Emergency announcements and security codes are always sent.';
+  String get smsSave => _f ? 'I-save' : 'Save';
+  String get smsLater => _f ? 'Mamaya na lang' : 'Ask me later';
+  String get smsSaved =>
+      _f ? 'Na-save ang mga setting sa text' : 'Text message settings saved';
+  String get smsRow => _f ? 'Mga text message' : 'Text messages';
+  String get smsRowSub => _f
+      ? 'Mga update sa sertipiko at anunsyo sa pamamagitan ng SMS'
+      : 'Certificate updates and barangay announcements by SMS';
 }
 
 /// Holds the active language, persists it, and notifies the app to rebuild.

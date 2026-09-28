@@ -1,13 +1,10 @@
 /// Feature flags for modules that are built but not yet exposed.
 abstract class AppFeatures {
-  /// The MIS "Account Claiming" review module is hidden for now — it still
-  /// runs on placeholder claims with an approve action the API does not
-  /// implement (claiming is instant, with no pending queue). The page itself
-  /// is intact; only its sidebar entry is gated. Flip to `true` to restore it.
-  ///
-  /// This does NOT affect resident-facing account claiming from the sign-in
-  /// screen, which stays available.
-  static const bool misAccountClaiming = false;
+  /// The MIS "Account Claiming" review module — the queue of account
+  /// applications (routes/account-applications.js). It was hidden while it
+  /// ran on placeholder claims; it is live now. Flip to `false` to hide its
+  /// sidebar entry again. Applying from the sign-in screen is unaffected.
+  static const bool misAccountClaiming = true;
 }
 
 /// Central place for copy, contact details, spacing and motion values.
@@ -23,7 +20,7 @@ abstract class AppStrings {
   // (core/i18n/app_text.dart) when the Filipino translation landed — they
   // vary by language, so they can't live here as constants.
 
-  static const String hotline = '(043) 702–4011';
+  static const String hotline = '043-702-8875';
   static const String officeHours = 'Mon–Fri · 8:00 AM–5:00 PM';
   static const String address = 'Conde Labac, Batangas City';
   static const String population = '4,800+ residents';

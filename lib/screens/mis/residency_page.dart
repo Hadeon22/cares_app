@@ -24,6 +24,10 @@ class ResidencyPage extends StatefulWidget {
 class _ResidencyPageState extends State<ResidencyPage> {
   String _query = '';
   String? _purok;
+  /// Classification filter — the label, matched against ResidentRecord.cats.
+  String? _category;
+  /// 'claimed' | 'unclaimed' | null. Same rule the Status badge paints by.
+  String? _accountStatus;
 
   /// Which sub-page shows: the resident directory or the resident-filed
   /// profile edit requests awaiting review.
@@ -128,6 +132,14 @@ class _ResidencyPageState extends State<ResidencyPage> {
         return false;
       }
       if (_purok != null && r.purok != _purok) return false;
+      // A resident can hold several classifications, so this asks whether the
+      // chosen one is among them rather than comparing a single value.
+      if (_category != null && !r.cats.contains(_category)) return false;
+      if (_accountStatus != null) {
+        final claimed = r.status == 'Active';
+        if (_accountStatus == 'claimed' && !claimed) return false;
+        if (_accountStatus == 'unclaimed' && claimed) return false;
+      }
       return true;
     }).toList();
 
@@ -187,6 +199,32 @@ class _ResidencyPageState extends State<ResidencyPage> {
                         value: 'Purok $i', child: Text('Purok $i')),
                 ],
                 onChanged: (v) => setState(() => _purok = v),
+              ),
+              const SizedBox(height: AppSpacing.sm),
+              // Category and Status — the two columns the retired public
+              // resident search could narrow by, now filters on the real
+              // directory instead of a second copy of it.
+              DropdownButtonFormField<String?>(
+                initialValue: _category,
+                items: [
+                  const DropdownMenuItem(
+                      value: null, child: Text('All Categories')),
+                  for (final label in kClassificationLabels.values)
+                    DropdownMenuItem(value: label, child: Text(label)),
+                ],
+                onChanged: (v) => setState(() => _category = v),
+              ),
+              const SizedBox(height: AppSpacing.sm),
+              DropdownButtonFormField<String?>(
+                initialValue: _accountStatus,
+                items: const [
+                  DropdownMenuItem(value: null, child: Text('All Statuses')),
+                  DropdownMenuItem(
+                      value: 'claimed', child: Text('Active (claimed)')),
+                  DropdownMenuItem(
+                      value: 'unclaimed', child: Text('Unclaimed')),
+                ],
+                onChanged: (v) => setState(() => _accountStatus = v),
               ),
               const SizedBox(height: AppSpacing.md),
               if (store.loading)
@@ -317,7 +355,7 @@ class _ResidencyPageState extends State<ResidencyPage> {
         kind: _statusBadges[r.status] ?? BadgeKind.gray,
       ),
       rows: [
-        ('Resident', '#${r.residentId}'),
+        ('Resident', '#${r.residentId}${r.purok == null ? '' : ' · ${r.purok}'}'),
         ('Filed', loc.formatMediumDate(r.createdAt)),
         for (final e in r.changes.entries)
           (
@@ -325,7 +363,15 @@ class _ResidencyPageState extends State<ResidencyPage> {
             '${_fieldValue(e.key, r.current[e.key])} → '
                 '${_fieldValue(e.key, e.value)}',
           ),
-        if (r.remarks?.isNotEmpty ?? false) ('Remarks', r.remarks),
+        // Why the resident asked. Required on new requests; older rows
+        // predate the field, and saying so beats leaving the row blank.
+        (
+          "Resident's reason",
+          (r.reason?.isNotEmpty ?? false)
+              ? r.reason
+              : 'Not given — this request predates the reason field.',
+        ),
+        if (r.remarks?.isNotEmpty ?? false) ('Staff remarks', r.remarks),
         if (r.processedByName != null) ('Processed By', r.processedByName),
         if (r.processedAt != null)
           ('Processed At', loc.formatMediumDate(r.processedAt!)),
@@ -524,6 +570,13 @@ class _ResidencyPageState extends State<ResidencyPage> {
                     padding: const EdgeInsets.all(AppSpacing.sm + 4),
                     child: Row(
                       children: [
+                        // Residents with a photo on file show it; the rest get
+                        // their initials in the same circle, so the column is a
+                        // consistent rail down the list rather than a scatter
+                        // of images among blanks.
+                        ResidentAvatar(
+                            initials: r.initials, photo: r.photo, radius: 18),
+                        const SizedBox(width: AppSpacing.sm + 4),
                         Expanded(
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,

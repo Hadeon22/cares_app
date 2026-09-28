@@ -20,14 +20,14 @@ class ResidentProfile {
     this.age,
     this.sex,
     this.civilStatus,
-    this.relationshipToHead,
     this.contactNo,
     this.occupation,
     this.voterStatus,
     this.lifecycleStatus = 'active',
     this.accountClaimed = false,
     this.dateRegistered,
-    this.householdNo,
+    this.householdName,
+    this.buildingId,
     this.addressText,
     this.purok,
     this.classifications = const [],
@@ -44,7 +44,6 @@ class ResidentProfile {
         age: (j['age'] as num?)?.toInt(),
         sex: j['sex'] as String?,
         civilStatus: j['civil_status'] as String?,
-        relationshipToHead: j['relationship_to_head'] as String?,
         contactNo: j['contact_no'] as String?,
         occupation: j['occupation'] as String?,
         voterStatus: j['voter_status'] as String?,
@@ -52,7 +51,8 @@ class ResidentProfile {
         accountClaimed: j['account_claimed'] == true,
         dateRegistered:
             DateTime.tryParse(j['date_registered']?.toString() ?? ''),
-        householdNo: j['household_no'] as String?,
+        householdName: j['household_name'] as String?,
+        buildingId: (j['building_id'] as num?)?.toInt(),
         addressText: j['address_text'] as String?,
         purok: j['purok'] as String?,
         photo: j['photo'] as String?,
@@ -109,14 +109,17 @@ class ResidentProfile {
   final int? age;
   final String? sex;
   final String? civilStatus;
-  final String? relationshipToHead;
   final String? contactNo;
   final String? occupation;
   final String? voterStatus;
   final String lifecycleStatus; // active | deceased | moved | archived
   final bool accountClaimed;
   final DateTime? dateRegistered;
-  final String? householdNo;
+  /// The household this resident belongs to: a building tagged as one on the
+  /// GIS map, named rather than numbered ("Bahay ni Shane"). Null until
+  /// somebody tags their house on the map.
+  final String? householdName;
+  final int? buildingId;
   final String? addressText;
   final String? purok;
   final List<String> classifications; // display labels

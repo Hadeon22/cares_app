@@ -9,6 +9,7 @@ import '../data/api_client.dart';
 import '../data/session.dart';
 import '../data/stores.dart';
 import '../widgets/common.dart';
+import '../widgets/sms_settings_sheet.dart';
 import '../widgets/offline_banner.dart';
 import '../widgets/photo_picker.dart';
 import 'gis_map_screen.dart';
@@ -65,6 +66,15 @@ class _MainShellState extends State<MainShell> {
   void _onSessionChanged() {
     setState(() {});
     _syncNotifications();
+    _askAboutTexts();
+  }
+
+  // A resident's first sign-in asks which texts they want (SMS settings);
+  // once they choose, it never asks again.
+  void _askAboutTexts() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) maybePromptSmsSettings(context);
+    });
   }
 
   void _syncNotifications() {
@@ -87,14 +97,34 @@ class _MainShellState extends State<MainShell> {
   void initState() {
     super.initState();
     AppSession.instance.addListener(_onSessionChanged);
+    // The MIS destination comes and goes with the Role Access Matrix, so the
+    // nav bar repaints when that lands (or an Admin changes it).
+    ModuleAccess.instance.addListener(_onMatrixChanged);
+    if (AppSession.instance.isSignedIn) ModuleAccess.instance.ensureLoaded();
     _syncNotifications();
+    _askAboutTexts();
+  }
+
+  void _onMatrixChanged() {
+    if (mounted) setState(() {});
   }
 
   @override
   void dispose() {
     _notifTimer?.cancel();
     AppSession.instance.removeListener(_onSessionChanged);
+    ModuleAccess.instance.removeListener(_onMatrixChanged);
     super.dispose();
+  }
+
+  /// Whether this account gets the MIS destination in the nav bar. Being staff
+  /// is necessary but no longer sufficient: the "MIS Access" row of the Role
+  /// Access Matrix (MIS → User Management) can take the MIS away from a role,
+  /// and this is the app's half of the web navbar's MIS link.
+  bool get _canOpenMis {
+    final session = AppSession.instance;
+    return (session.role?.isStaff ?? false) &&
+        ModuleAccess.instance.canOpenMis(session.role?.name);
   }
 
   @override
@@ -285,9 +315,8 @@ class _MainShellState extends State<MainShell> {
         ],
       ),
       bottomNavigationBar: NavigationBar(
-        selectedIndex: _navSelectedIndex(session.role?.isStaff ?? false),
-        onDestinationSelected: (dest) =>
-            _onNavTap(session.role?.isStaff ?? false, dest),
+        selectedIndex: _navSelectedIndex(_canOpenMis),
+        onDestinationSelected: (dest) => _onNavTap(_canOpenMis, dest),
         destinations: [
           NavigationDestination(
             icon: const Icon(Icons.home_outlined),
@@ -304,9 +333,9 @@ class _MainShellState extends State<MainShell> {
             selectedIcon: const Icon(Icons.map),
             label: L.text.navGisMap,
           ),
-          // MIS (staff only) sits just before Profile, so Profile stays the
-          // rightmost destination for everyone.
-          if (session.role?.isStaff ?? false)
+          // MIS (staff with MIS access) sits just before Profile, so Profile
+          // stays the rightmost destination for everyone.
+          if (_canOpenMis)
             const NavigationDestination(
               icon: Icon(Icons.space_dashboard_outlined),
               selectedIcon: Icon(Icons.space_dashboard),

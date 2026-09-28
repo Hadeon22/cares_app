@@ -9,9 +9,8 @@ import '../widgets/app_toast.dart';
 import '../widgets/photo_picker.dart';
 import '../widgets/pull_to_refresh.dart';
 import 'login_screen.dart';
-import 'profile/activity_history_screen.dart';
+import 'profile/my_activity_screen.dart';
 import 'profile/my_info_screen.dart';
-import 'profile/my_requests_screen.dart';
 import 'profile/notifications_screen.dart';
 import 'profile/settings_screen.dart';
 
@@ -98,17 +97,13 @@ class ProfileScreen extends StatelessWidget {
                 subtitle: L.text.myInformationSub,
                 onTap: () => push(const MyInfoScreen()),
               ),
+              // My Requests and Activity History merged — see
+              // MyActivityScreen for why.
               _ProfileTile(
-                icon: Icons.receipt_long_outlined,
-                title: L.text.myRequests,
-                subtitle: L.text.myRequestsSub,
-                onTap: () => push(const MyRequestsScreen()),
-              ),
-              _ProfileTile(
-                icon: Icons.history,
-                title: L.text.activityHistory,
-                subtitle: L.text.activityHistorySub,
-                onTap: () => push(const ActivityHistoryScreen()),
+                icon: Icons.inbox_outlined,
+                title: L.text.myActivity,
+                subtitle: L.text.myActivitySub,
+                onTap: () => push(const MyActivityScreen()),
               ),
               _ProfileTile(
                 icon: Icons.notifications_outlined,

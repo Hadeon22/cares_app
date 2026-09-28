@@ -18,7 +18,16 @@ class FeedbackScreen extends StatefulWidget {
 
 class _FeedbackScreenState extends State<FeedbackScreen> {
   String _category = kFeedbackCategories.first;
-  int _rating = 4;
+
+  /// 0 = nothing chosen. The screen used to open with four stars lit, so a
+  /// resident who never touched the row had their submission filed as "Good" —
+  /// an opinion they never gave, counted into the barangay's average rating.
+  /// Submitting without a rating is refused below.
+  int _rating = 0;
+
+  /// Set when submit is pressed with no rating, so the row turns amber and
+  /// says what is missing rather than only flashing a toast.
+  bool _ratingMissing = false;
   final _comment = TextEditingController();
   final _name = TextEditingController();
   final _contact = TextEditingController();
@@ -35,6 +44,12 @@ class _FeedbackScreenState extends State<FeedbackScreen> {
 
   Future<void> _submit() async {
     if (_busy) return;
+    if (_rating == 0) {
+      setState(() => _ratingMissing = true);
+      showAppToast(context, 'Choose a star rating — one to five.',
+          icon: Icons.error_outline);
+      return;
+    }
     if (_comment.text.trim().isEmpty) {
       showAppToast(context, 'Please enter a comment or suggestion.',
           icon: Icons.error_outline);
@@ -95,22 +110,35 @@ class _FeedbackScreenState extends State<FeedbackScreen> {
             children: [
               for (var i = 1; i <= 5; i++)
                 IconButton(
-                  onPressed: () => setState(() => _rating = i),
+                  onPressed: () => setState(() {
+                    _rating = i;
+                    _ratingMissing = false;
+                  }),
                   iconSize: 34,
                   padding: const EdgeInsets.symmetric(horizontal: 2),
                   icon: Icon(
                     i <= _rating ? Icons.star_rounded : Icons.star_outline_rounded,
+                    // Only the OUTLINE stars carry the refusal colour, never a
+                    // filled one — a red outline cannot be mistaken for a star
+                    // that is selected, which a red fill could.
                     color: i <= _rating
                         ? AppColors.gold
-                        : AppColors.divider,
+                        : (_ratingMissing
+                            ? AppColors.emergency
+                            : AppColors.divider),
                   ),
                 ),
             ],
           ),
           Text(
-            '$_rating out of 5 – ${kRatingLabels[_rating]}',
+            _rating == 0
+                ? (_ratingMissing
+                    ? 'Choose a star rating — one to five.'
+                    : 'Select a rating')
+                : '$_rating out of 5 – ${kRatingLabels[_rating]}',
             style: text.labelMedium?.copyWith(
-                color: AppColors.inkMuted, fontWeight: FontWeight.w700),
+                color: _ratingMissing ? AppColors.emergency : AppColors.inkMuted,
+                fontWeight: FontWeight.w700),
           ),
           const SizedBox(height: AppSpacing.md),
           AppTextField(

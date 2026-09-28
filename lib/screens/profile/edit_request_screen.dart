@@ -33,6 +33,9 @@ class _EditRequestScreenState extends State<EditRequestScreen> {
       TextEditingController(text: widget.profile.contactNo ?? '');
   late final _occupation =
       TextEditingController(text: widget.profile.occupation ?? '');
+  /// Why the change is being asked for. Required by the API — see
+  /// EditRequestStore.reasonMinLength.
+  final _reason = TextEditingController();
 
   late DateTime? _birthdate = widget.profile.birthdate;
   late String _civil = widget.profile.civilStatus ?? '';
@@ -49,7 +52,15 @@ class _EditRequestScreenState extends State<EditRequestScreen> {
 
   @override
   void dispose() {
-    for (final c in [_last, _first, _middle, _suffix, _contact, _occupation]) {
+    for (final c in [
+      _last,
+      _first,
+      _middle,
+      _suffix,
+      _contact,
+      _occupation,
+      _reason,
+    ]) {
       c.dispose();
     }
     super.dispose();
@@ -115,11 +126,23 @@ class _EditRequestScreenState extends State<EditRequestScreen> {
           icon: Icons.info_outline);
       return;
     }
+    // Checked here as well as server-side so the resident is told before the
+    // round trip, not by a 400 after it.
+    final reason = _reason.text.trim();
+    if (reason.length < EditRequestStore.reasonMinLength) {
+      showAppToast(
+          context,
+          'Please give a reason for the change '
+          '(at least ${EditRequestStore.reasonMinLength} characters).',
+          icon: Icons.error_outline);
+      return;
+    }
     setState(() => _busy = true);
     try {
       await EditRequestStore.instance.submit(
         residentId: widget.profile.id,
         changes: changes,
+        reason: reason,
         accountId: AppSession.instance.accountId,
       );
     } catch (e) {
@@ -146,13 +169,6 @@ class _EditRequestScreenState extends State<EditRequestScreen> {
         padding: const EdgeInsets.fromLTRB(
             AppSpacing.gutter, AppSpacing.lg, AppSpacing.gutter, AppSpacing.xxl),
         children: [
-          const AlertBanner(
-            kind: AlertKind.info,
-            child: Text('Changes are not applied immediately. Your request '
-                'is sent to the barangay office for approval, and you will '
-                'be notified of the result.'),
-          ),
-          const SizedBox(height: AppSpacing.sm),
           ResidentPhotoPicker(
             photo: _photo,
             initials:
@@ -218,6 +234,15 @@ class _EditRequestScreenState extends State<EditRequestScreen> {
             label: 'Occupation',
             controller: _occupation,
             hint: 'e.g. Farmer',
+          ),
+          // Required. Staff read this when deciding, and it stays on the
+          // record as the reason the details were changed.
+          AppTextField(
+            label: 'Reason for the change',
+            controller: _reason,
+            maxLines: 3,
+            hint: 'e.g. I got married in March 2026, so my surname is now '
+                'Reyes.',
           ),
           const SizedBox(height: AppSpacing.md),
           FilledButton.icon(

@@ -19,6 +19,10 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     'message': Icons.mail_outline,
     'system': Icons.info_outline,
     'announcement': Icons.campaign_outlined,
+    // Sent to Admins and Officers when the AI flags a resident comment as
+    // needing action today (server: ai-alert-service.js). Only staff accounts
+    // ever receive one.
+    'ai_alert': Icons.warning_amber_rounded,
   };
 
   @override
@@ -150,8 +154,13 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                             Text(
                               [
                                 // Announcements carry an internal id (ANN-…)
-                                // that shouldn't surface next to the date.
-                                if (n.ref.isNotEmpty && n.kind != 'announcement')
+                                // that shouldn't surface next to the date, and
+                                // an AI alert's ref is a row pointer
+                                // ("feedback:23") meant for the code, not the
+                                // reader.
+                                if (n.ref.isNotEmpty &&
+                                    n.kind != 'announcement' &&
+                                    n.kind != 'ai_alert')
                                   n.ref,
                                 MaterialLocalizations.of(context)
                                     .formatMediumDate(n.createdAt),
